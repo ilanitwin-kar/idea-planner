@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Idea Planner</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">IP</div>
+        <div>
+          <div class="title">Idea Planner</div>
+          <div class="subtitle">רעיונות → משימות → תתי־משימות עם תזמון</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="auth">
+          <div id="authStatus" class="auth-status">מצב: מקומי</div>
+          <button id="authBtn" class="btn btn-ghost" type="button">התחברות</button>
+        </div>
+        <button id="settingsBtn" class="btn btn-ghost" type="button">הגדרות</button>
+        <button id="notifyBtn" class="btn btn-ghost" type="button" title="הפעלת התראות לתזכורות">התראות</button>
+        <button id="resetBtn" class="btn btn-ghost" type="button" title="איפוס נתונים (מוחק הכל)">
+          איפוס
+        </button>
+      </div>
+    </header>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <dialog id="authDialog" class="dialog">
+      <form method="dialog" class="dialog-inner" id="authForm">
+        <div class="dialog-title">התחברות וסנכרון בין מכשירים</div>
+        <div class="dialog-text">
+          כדי לאפשר סנכרון, צריך להגדיר פרטי Firebase בפרויקט. אם זה לא הוגדר עדיין, האפליקציה תעבוד במצב מקומי בלבד.
+        </div>
+        <div class="dialog-grid">
+          <input id="authEmail" class="input" type="email" placeholder="אימייל" autocomplete="email" />
+          <input id="authPassword" class="input" type="password" placeholder="סיסמה" autocomplete="current-password" />
+        </div>
+        <div class="dialog-actions">
+          <button id="authLogin" class="btn" type="button">התחברות</button>
+          <button id="authSignup" class="btn btn-ghost" type="button">הרשמה</button>
+          <button id="authLogout" class="btn btn-ghost" type="button">התנתקות</button>
+          <button class="btn btn-ghost" value="cancel" type="submit">סגירה</button>
+        </div>
+        <div id="authHint" class="dialog-hint"></div>
+      </form>
+    </dialog>
+
+    <dialog id="eventDialog" class="dialog">
+      <form method="dialog" class="dialog-inner" id="eventForm">
+        <div class="dialog-title" id="eventTitle">עריכת תת־משימה</div>
+        <div class="dialog-text" id="eventMeta"></div>
+        <div class="dialog-grid">
+          <input id="eventStart" class="input" type="datetime-local" />
+          <input id="eventEnd" class="input" type="datetime-local" />
+        </div>
+        <div class="dialog-actions">
+          <label class="checkline">
+            <input id="eventDone" type="checkbox" />
+            בוצע
+          </label>
+          <button id="eventSave" class="btn" type="button">שמירה</button>
+          <button class="btn btn-ghost" value="cancel" type="submit">סגירה</button>
+        </div>
+        <div id="eventHint" class="dialog-hint"></div>
+      </form>
+    </dialog>
+
+    <dialog id="settingsDialog" class="dialog">
+      <form method="dialog" class="dialog-inner">
+        <div class="dialog-title">הגדרות</div>
+        <div class="dialog-text">שליטה בתזכורות ותצוגת לוח השנה.</div>
+        <div class="section">
+          <div class="section-title">תזכורות</div>
+          <label class="checkline"><input id="setRemindBefore30" type="checkbox" /> תזכורת 30 דקות לפני</label>
+          <label class="checkline"><input id="setRemindAtTime" type="checkbox" /> תזכורת בזמן ההתחלה</label>
+          <div class="dialog-text" style="margin-top:8px">שרת תזכורות (Push):</div>
+          <input id="setPushUrl" class="input" type="text" placeholder="http://localhost:8787" />
+        </div>
+        <div class="section">
+          <div class="section-title">לוח שנה</div>
+          <label class="checkline">תצוגת ברירת מחדל:
+            <select id="setDefaultCalMode" class="select">
+              <option value="day">יום</option>
+              <option value="week">שבוע</option>
+              <option value="month">חודש</option>
+            </select>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button id="settingsSave" class="btn" type="button">שמירה</button>
+          <button class="btn btn-ghost" value="cancel" type="submit">סגירה</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="exportDialog" class="dialog">
+      <form method="dialog" class="dialog-inner">
+        <div class="dialog-title">ייצוא / שיתוף רעיון</div>
+        <div class="dialog-text">אפשר להעתיק, לשלוח בווטסאפ/מייל, או להדפיס.</div>
+        <textarea id="exportText" class="textarea" rows="10" readonly></textarea>
+        <div class="dialog-actions">
+          <button id="exportCopy" class="btn" type="button">העתקה</button>
+          <button id="exportWhatsApp" class="btn btn-ghost" type="button">ווטסאפ</button>
+          <button id="exportEmail" class="btn btn-ghost" type="button">מייל</button>
+          <button id="exportPrint" class="btn btn-ghost" type="button">הדפסה</button>
+          <button class="btn btn-ghost" value="cancel" type="submit">סגירה</button>
+        </div>
+        <div id="exportHint" class="dialog-hint"></div>
+      </form>
+    </dialog>
+
+    <main class="layout">
+      <aside class="panel ideas-panel" aria-label="רעיונות">
+        <div class="panel-header">
+          <div class="panel-title">רעיונות</div>
+          <div class="panel-hint">בחרי רעיון כדי לבנות אסטרטגיה ומשימות.</div>
+        </div>
+
+        <div id="homeSummary" class="home-summary" aria-label="סיכום">
+          <div class="hs-title">סיכום</div>
+          <div class="hs-grid">
+            <div class="hs-card">
+              <div class="hs-label">רעיונות</div>
+              <div id="hsIdeas" class="hs-value">0</div>
+            </div>
+            <div class="hs-card">
+              <div class="hs-label">משימות</div>
+              <div id="hsTasks" class="hs-value">0/0</div>
+            </div>
+            <div class="hs-card">
+              <div class="hs-label">היום</div>
+              <div id="hsToday" class="hs-value">0</div>
+            </div>
+            <div class="hs-card">
+              <div class="hs-label">הבא</div>
+              <div id="hsNext" class="hs-value">—</div>
+            </div>
+          </div>
+        </div>
+
+        <form id="addIdeaForm" class="add-row" autocomplete="off">
+          <input
+            id="ideaTitleInput"
+            class="input"
+            type="text"
+            placeholder="רעיון חדש…"
+            maxlength="80"
+            required
+          />
+          <button class="btn" type="submit">הוספה</button>
+        </form>
+
+        <div id="ideasList" class="list" role="list"></div>
+      </aside>
+
+      <section class="panel content-panel" aria-label="פרטי רעיון">
+        <div class="tabs" role="tablist" aria-label="ניווט">
+          <button id="tabIdea" class="tab active" type="button" role="tab" aria-selected="true">רעיון</button>
+          <button id="tabCalendar" class="tab" type="button" role="tab" aria-selected="false">לוח שנה</button>
+          <button id="tabTasks" class="tab" type="button" role="tab" aria-selected="false">משימות</button>
+        </div>
+
+        <div id="emptyState" class="empty">
+          <div class="empty-title">נתחיל?</div>
+          <div class="empty-text">הוסיפי רעיון או בחרי רעיון קיים כדי ליצור משימות ותתי־משימות עם תאריך ושעה.</div>
+        </div>
+
+        <div id="ideaView" class="hidden" role="tabpanel" aria-label="רעיון">
+          <div class="mobile-header">
+            <button id="mobileBack" class="btn btn-ghost" type="button">חזרה</button>
+            <div class="mobile-title">רעיון</div>
+            <button id="ideaExportBtnMobile" class="btn btn-ghost" type="button">שיתוף</button>
+          </div>
+          <div class="panel-header">
+            <div class="panel-title" id="currentIdeaTitle"></div>
+            <div class="panel-hint" id="currentIdeaMeta"></div>
+            <div class="panel-actions">
+              <button id="ideaExportBtn" class="btn btn-ghost" type="button">ייצוא/שיתוף</button>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">אסטרטגיה / תיאור רעיון</div>
+            <textarea
+              id="ideaStrategyInput"
+              class="textarea"
+              placeholder="כתבי כאן את האסטרטגיה, רעיונות, מטרות, מהלכים…"
+              rows="5"
+            ></textarea>
+          </div>
+
+          <form id="addTaskForm" class="add-row" autocomplete="off">
+            <input
+              id="taskTitleInput"
+              class="input"
+              type="text"
+              placeholder="משימה חדשה…"
+              maxlength="120"
+              required
+            />
+            <button class="btn" type="submit">הוספה</button>
+          </form>
+
+          <div id="tasksList" class="list"></div>
+        </div>
+
+        <div id="calendarView" class="hidden" role="tabpanel" aria-label="לוח שנה">
+          <div class="panel-header">
+            <div class="panel-title">לוח שנה</div>
+            <div class="panel-hint">כל תתי־המשימות מכל הרעיונות מרוכזות לפי זמן.</div>
+          </div>
+
+          <div class="calendar-controls">
+            <div class="segmented" role="group" aria-label="תצוגה">
+              <button class="seg active" id="calModeDay" type="button">יום</button>
+              <button class="seg" id="calModeWeek" type="button">שבוע</button>
+              <button class="seg" id="calModeMonth" type="button">חודש</button>
+            </div>
+            <div class="filters" aria-label="סינון">
+              <select id="calFilterIdea" class="select" aria-label="סינון לפי רעיון">
+                <option value="">כל הרעיונות</option>
+              </select>
+              <select id="calFilterTask" class="select" aria-label="סינון לפי משימה">
+                <option value="">כל המשימות</option>
+              </select>
+              <label class="checkline">
+                <input id="calShowDone" type="checkbox" checked />
+                הצג שהושלמו
+              </label>
+            </div>
+            <div class="cal-nav">
+              <button class="btn btn-ghost" id="calPrev" type="button">הקודם</button>
+              <div id="calTitle" class="cal-title"></div>
+              <button class="btn btn-ghost" id="calNext" type="button">הבא</button>
+              <button class="btn btn-ghost" id="calToday" type="button">היום</button>
+            </div>
+          </div>
+
+          <div id="calendarGrid" class="calendar-grid"></div>
+        </div>
+
+        <div id="tasksView" class="hidden" role="tabpanel" aria-label="משימות">
+          <div class="panel-header">
+            <div class="panel-title">משימות</div>
+            <div class="panel-hint">רשימה מרוכזת של תתי־משימות מכל הרעיונות.</div>
+          </div>
+          <div class="section">
+            <input id="tasksSearch" class="input" type="text" placeholder="חיפוש…" />
+          </div>
+          <div id="tasksListAll" class="list"></div>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="תפריט תחתון">
+      <button id="bnHome" class="bn-item active" type="button">בית</button>
+      <button id="bnCalendar" class="bn-item" type="button">לוח שנה</button>
+      <button id="bnTasks" class="bn-item" type="button">משימות</button>
+      <button id="bnSettings" class="bn-item" type="button">הגדרות</button>
+    </nav>
+
+    <footer class="footer">
+      הנתונים נשמרים מקומית בדפדפן (LocalStorage).
+    </footer>
+
+    <script type="module" src="./app.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("./sw.js").catch(() => {});
+      }
+    </script>
+  </body>
+</html>
+

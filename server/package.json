@@ -1,0 +1,17 @@
+{
+  "name": "idea-planner-server",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "node index.js",
+    "gen:vapid": "node scripts/gen-vapid.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.7",
+    "web-push": "^3.6.7"
+  }
+}
+
