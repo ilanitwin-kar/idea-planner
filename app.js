@@ -3,12 +3,11 @@ import {
   loadDayJournal,
   saveDayJournal,
   localDateKey,
+  addDaysToDateKey,
   addDayItem,
   toggleDayItem,
   deleteDayItem,
   updateDayItemTitle,
-  pastDayKeysWithItems,
-  futureDayKeysWithItems,
   dayProgress,
 } from "./daily-journal.js";
 
@@ -222,42 +221,334 @@ function saveSettings() {
 }
 
 const APP_MODE_KEY = "idea-planner:app-mode:v1";
-const FUTURE_DAY_KEY = "idea-planner:future-day-key:v1";
 
 function loadAppMode() {
   try {
     const v = localStorage.getItem(APP_MODE_KEY);
-    if (v === "ideas" || v === "daily-today" || v === "daily-future" || v === "daily-history") return v;
+    if (
+      v === "ideas" ||
+      v === "daily-today" ||
+      v === "daily-future" ||
+      v === "daily-history" ||
+      v === "daily-master"
+    )
+      return v;
   } catch {
     /* ignore */
   }
   return "daily-today";
 }
 
-let appMode = loadAppMode();
-let dayJournal = loadDayJournal();
-let historySelectedKey = null;
-let lastKnownCalendarDayKey = localDateKey();
+const LAST_CALENDAR_DAY_KEY = "idea-planner:last-known-calendar-day:v1";
 
-function nextDayKeyAfter(todayKey) {
-  const [y, m, d] = todayKey.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + 1);
-  return localDateKey(dt);
-}
-
-function loadFutureDayKey(todayKey) {
+function loadPersistedCalendarDay() {
   try {
-    const v = localStorage.getItem(FUTURE_DAY_KEY);
-    if (v && typeof v === "string" && v > todayKey) return v;
+    const v = localStorage.getItem(LAST_CALENDAR_DAY_KEY);
+    if (v && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   } catch {
     /* ignore */
   }
-  return nextDayKeyAfter(todayKey);
+  return null;
 }
 
-function saveFutureDayKey(k) {
-  localStorage.setItem(FUTURE_DAY_KEY, k);
+function persistLastKnownCalendarDay() {
+  try {
+    localStorage.setItem(LAST_CALENDAR_DAY_KEY, lastKnownCalendarDayKey);
+  } catch {
+    /* ignore */
+  }
+}
+
+let appMode = loadAppMode();
+let dayJournal = loadDayJournal();
+let lastKnownCalendarDayKey = loadPersistedCalendarDay() ?? localDateKey();
+/** יום שמוצג במסך «היום שלי» (מחלקה / כפתורים) */
+let dailyBrowseDateKey = localDateKey();
+
+const DAILY_SWIPE_MIN_PX = 56;
+const DAILY_SWIPE_MAX_MS = 700;
+
+function rollIncompleteDailyTasksFromTo(fromKey, toKey) {
+  if (!fromKey || !toKey || fromKey >= toKey) return;
+  const day = dayJournal.days[fromKey];
+  if (!day?.items?.length) return;
+  const undone = day.items.filter((x) => !x.done);
+  if (undone.length === 0) return;
+  for (const it of undone) {
+    const title = String(it.title ?? it.text ?? "").trim();
+    if (!title) continue;
+    addDayItem(dayJournal, toKey, uid("ditem"), title);
+  }
+  day.items = day.items.filter((x) => x.done);
+  if (day.items.length === 0) delete dayJournal.days[fromKey];
+}
+
+/** כשנכנס יום חדש בלוח: כל מה שלא סומן V ביום הקודם — מועתק ליום הבא (שרשרת אם היה פער) */
+function maybeRollDailyJournalAtMidnight() {
+  const today = localDateKey();
+  if (today < lastKnownCalendarDayKey) {
+    lastKnownCalendarDayKey = today;
+    persistLastKnownCalendarDay();
+    return;
+  }
+  if (today === lastKnownCalendarDayKey) {
+    persistLastKnownCalendarDay();
+    return;
+  }
+
+  let from = lastKnownCalendarDayKey;
+  while (from < today) {
+    const next = addDaysToDateKey(from, 1);
+    rollIncompleteDailyTasksFromTo(from, next);
+    from = next;
+  }
+  lastKnownCalendarDayKey = today;
+  dailyBrowseDateKey = today;
+  saveDayJournal(dayJournal);
+  persistLastKnownCalendarDay();
+}
+
+function subtaskLocalDateKey(iso) {
+  const d = isoToDate(iso);
+  return d ? localDateKey(d) : null;
+}
+
+function sortSubtasksByStart(subs) {
+  return [...subs].sort((a, b) => {
+    const ta = isoToDate(a.startsAt)?.getTime() ?? 0;
+    const tb = isoToDate(b.startsAt)?.getTime() ?? 0;
+    return ta - tb;
+  });
+}
+
+function subtaskTimeShort(iso) {
+  const d = isoToDate(iso);
+  if (!d) return "";
+  return d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** תתי־משימות פתוחות לפי תאריך התחלה (מקומי), ועוד קבוצה בלי תאריך */
+function collectOpenSubtasksByDate() {
+  const todayK = localDateKey();
+  /** @type {Map<string, Map<string, { ideaTitle: string, taskTitle: string, subs: any[] }>>} */
+  const byDate = new Map();
+  /** @type {Map<string, { ideaTitle: string, taskTitle: string, subs: any[] }>} */
+  const noDate = new Map();
+
+  for (const idea of state.ideas) {
+    for (const task of idea.tasks ?? []) {
+      for (const sub of task.subtasks ?? []) {
+        if (sub.done) continue;
+        const dk = subtaskLocalDateKey(sub.startsAt);
+        const tkey = `${idea.id}::${task.id}`;
+        const ideaTitle = idea.title || "ללא שם";
+        const taskTitle = task.title || "ללא שם";
+        if (!dk) {
+          if (!noDate.has(tkey)) noDate.set(tkey, { ideaTitle, taskTitle, subs: [] });
+          noDate.get(tkey).subs.push(sub);
+          continue;
+        }
+        if (!byDate.has(dk)) byDate.set(dk, new Map());
+        const tm = byDate.get(dk);
+        if (!tm.has(tkey)) tm.set(tkey, { ideaTitle, taskTitle, subs: [] });
+        tm.get(tkey).subs.push(sub);
+      }
+    }
+  }
+
+  const dateKeys = [...byDate.keys()].sort((a, b) => {
+    const aOver = a < todayK;
+    const bOver = b < todayK;
+    if (aOver !== bOver) return aOver ? -1 : 1;
+    return a.localeCompare(b);
+  });
+
+  const datedSections = dateKeys.map((dk) => ({
+    dateKey: dk,
+    tasks: [...byDate.get(dk).values()].map((x) => ({ ...x, subs: sortSubtasksByStart(x.subs) })),
+  }));
+
+  const noDateTasks = [...noDate.values()].map((x) => ({ ...x, subs: sortSubtasksByStart(x.subs) }));
+
+  return { todayK, datedSections, noDateTasks };
+}
+
+/** תתי־משימות שבוצעו, לפי תאריך התחלה */
+function collectDoneSubtasksByDate() {
+  /** @type {Map<string, Map<string, { ideaTitle: string, taskTitle: string, subs: any[] }>>} */
+  const byDate = new Map();
+  /** @type {Map<string, { ideaTitle: string, taskTitle: string, subs: any[] }>} */
+  const noDate = new Map();
+
+  for (const idea of state.ideas) {
+    for (const task of idea.tasks ?? []) {
+      for (const sub of task.subtasks ?? []) {
+        if (!sub.done) continue;
+        const dk = subtaskLocalDateKey(sub.startsAt);
+        const tkey = `${idea.id}::${task.id}`;
+        const ideaTitle = idea.title || "ללא שם";
+        const taskTitle = task.title || "ללא שם";
+        if (!dk) {
+          if (!noDate.has(tkey)) noDate.set(tkey, { ideaTitle, taskTitle, subs: [] });
+          noDate.get(tkey).subs.push(sub);
+          continue;
+        }
+        if (!byDate.has(dk)) byDate.set(dk, new Map());
+        const tm = byDate.get(dk);
+        if (!tm.has(tkey)) tm.set(tkey, { ideaTitle, taskTitle, subs: [] });
+        tm.get(tkey).subs.push(sub);
+      }
+    }
+  }
+
+  const dateKeys = [...byDate.keys()].sort((a, b) => b.localeCompare(a));
+  const datedSections = dateKeys.map((dk) => ({
+    dateKey: dk,
+    tasks: [...byDate.get(dk).values()].map((x) => ({ ...x, subs: sortSubtasksByStart(x.subs) })),
+  }));
+  const noDateTasks = [...noDate.values()].map((x) => ({ ...x, subs: sortSubtasksByStart(x.subs) }));
+
+  return { datedSections, noDateTasks };
+}
+
+function renderSubtaskCheckboxRow(sub) {
+  const time = subtaskTimeShort(sub.startsAt);
+  const timeHtml = time ? `<span class="plan-sub-time">${escapeHtml(time)}</span>` : "";
+  return `
+    <label class="plan-sub-row">
+      <input class="check" type="checkbox" ${sub.done ? "checked" : ""} data-action="toggle-subtask-from-calendar" data-subtask-id="${escapeHtml(sub.id)}" aria-label="ביצוע תת־משימה" />
+      <span class="plan-sub-text">${escapeHtml(sub.title || "ללא שם")}</span>
+      ${timeHtml}
+    </label>
+  `;
+}
+
+function renderAggregatedPlanSections(container, mode) {
+  if (!container) return 0;
+  container.innerHTML = "";
+
+  if (mode === "future") {
+    const { datedSections, noDateTasks, todayK: tk } = collectOpenSubtasksByDate();
+    let totalOpen = 0;
+    for (const sec of datedSections) for (const t of sec.tasks) totalOpen += t.subs.length;
+    for (const t of noDateTasks) totalOpen += t.subs.length;
+
+    if (datedSections.length === 0 && noDateTasks.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty plan-empty";
+      empty.innerHTML = `<div class="empty-text">אין תתי־משימות פתוחות עם תזמון. הוסיפי תתי־משימות ותאריכים במסך הרעיונות (לשונית משימות או לוח שנה).</div>`;
+      container.appendChild(empty);
+      return totalOpen;
+    }
+
+    for (const sec of datedSections) {
+      const wrap = document.createElement("section");
+      wrap.className = "plan-date-block";
+      const late = sec.dateKey < tk;
+      wrap.innerHTML = `
+        <div class="plan-date-heading">
+          <span class="plan-date-title">${escapeHtml(formatHebrewDateLabel(sec.dateKey))}</span>
+          ${late ? `<span class="plan-badge-late">באיחור</span>` : ""}
+        </div>
+        <div class="plan-date-body"></div>
+      `;
+      const body = wrap.querySelector(".plan-date-body");
+      for (const task of sec.tasks) {
+        const blk = document.createElement("div");
+        blk.className = "plan-task-block";
+        blk.innerHTML = `
+          <div class="plan-task-head">
+            <span class="plan-task-name">${escapeHtml(task.taskTitle)}</span>
+            <span class="plan-idea-pill">${escapeHtml(task.ideaTitle)}</span>
+          </div>
+          <div class="plan-subs">${task.subs.map((s) => renderSubtaskCheckboxRow(s)).join("")}</div>
+        `;
+        body.appendChild(blk);
+      }
+      container.appendChild(wrap);
+    }
+
+    if (noDateTasks.length > 0) {
+      const wrap = document.createElement("section");
+      wrap.className = "plan-date-block plan-date-block--nodate";
+      wrap.innerHTML = `<div class="plan-date-heading"><span class="plan-date-title">בלי תאריך התחלה</span></div><div class="plan-date-body"></div>`;
+      const body = wrap.querySelector(".plan-date-body");
+      for (const task of noDateTasks) {
+        const blk = document.createElement("div");
+        blk.className = "plan-task-block";
+        blk.innerHTML = `
+          <div class="plan-task-head">
+            <span class="plan-task-name">${escapeHtml(task.taskTitle)}</span>
+            <span class="plan-idea-pill">${escapeHtml(task.ideaTitle)}</span>
+          </div>
+          <div class="plan-subs">${task.subs.map((s) => renderSubtaskCheckboxRow(s)).join("")}</div>
+        `;
+        body.appendChild(blk);
+      }
+      container.appendChild(wrap);
+    }
+    return totalOpen;
+  }
+
+  const { datedSections, noDateTasks } = collectDoneSubtasksByDate();
+  let totalDone = 0;
+  for (const sec of datedSections) for (const t of sec.tasks) totalDone += t.subs.length;
+  for (const t of noDateTasks) totalDone += t.subs.length;
+
+  if (datedSections.length === 0 && noDateTasks.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty plan-empty";
+    empty.innerHTML = `<div class="empty-text">עדיין לא סימנת תתי־משימות כבוצע. כשתסמני V ב«עתידי» או במסך הרעיונות — הן יופיעו כאן.</div>`;
+    container.appendChild(empty);
+    return totalDone;
+  }
+
+  for (const sec of datedSections) {
+    const wrap = document.createElement("section");
+    wrap.className = "plan-date-block";
+    wrap.innerHTML = `
+      <div class="plan-date-heading">
+        <span class="plan-date-title">${escapeHtml(formatHebrewDateLabel(sec.dateKey))}</span>
+      </div>
+      <div class="plan-date-body"></div>
+    `;
+    const body = wrap.querySelector(".plan-date-body");
+    for (const task of sec.tasks) {
+      const blk = document.createElement("div");
+      blk.className = "plan-task-block";
+      blk.innerHTML = `
+        <div class="plan-task-head">
+          <span class="plan-task-name">${escapeHtml(task.taskTitle)}</span>
+          <span class="plan-idea-pill">${escapeHtml(task.ideaTitle)}</span>
+        </div>
+        <div class="plan-subs">${task.subs.map((s) => renderSubtaskCheckboxRow(s)).join("")}</div>
+      `;
+      body.appendChild(blk);
+    }
+    container.appendChild(wrap);
+  }
+
+  if (noDateTasks.length > 0) {
+    const wrap = document.createElement("section");
+    wrap.className = "plan-date-block plan-date-block--nodate";
+    wrap.innerHTML = `<div class="plan-date-heading"><span class="plan-date-title">בוצע בלי תאריך התחלה</span></div><div class="plan-date-body"></div>`;
+    const body = wrap.querySelector(".plan-date-body");
+    for (const task of noDateTasks) {
+      const blk = document.createElement("div");
+      blk.className = "plan-task-block";
+      blk.innerHTML = `
+        <div class="plan-task-head">
+          <span class="plan-task-name">${escapeHtml(task.taskTitle)}</span>
+          <span class="plan-idea-pill">${escapeHtml(task.ideaTitle)}</span>
+        </div>
+        <div class="plan-subs">${task.subs.map((s) => renderSubtaskCheckboxRow(s)).join("")}</div>
+      `;
+      body.appendChild(blk);
+    }
+    container.appendChild(wrap);
+  }
+
+  return totalDone;
 }
 
 function formatHebrewDateLabel(dateKey) {
@@ -290,6 +581,7 @@ function syncAppNavActive() {
     ["daily-future", "topNavFuture"],
     ["daily-history", "tnDailyHistory"],
     ["daily-history", "topNavHistory"],
+    ["daily-master", "topNavDailyMaster"],
   ];
   for (const [m, id] of pairs) {
     document.getElementById(id)?.classList.toggle("active", appMode === m);
@@ -301,6 +593,7 @@ function updateAppViewsVisibility() {
   document.getElementById("viewDailyToday")?.classList.toggle("hidden", appMode !== "daily-today");
   document.getElementById("viewDailyFuture")?.classList.toggle("hidden", appMode !== "daily-future");
   document.getElementById("viewDailyHistory")?.classList.toggle("hidden", appMode !== "daily-history");
+  document.getElementById("viewDailyMaster")?.classList.toggle("hidden", appMode !== "daily-master");
 }
 
 function dayItemLabel(it) {
@@ -351,103 +644,188 @@ function renderDayItemsList(container, dateKey) {
   }
 }
 
+function shiftDailyBrowse(deltaDays) {
+  dailyBrowseDateKey = addDaysToDateKey(dailyBrowseDateKey, deltaDays);
+  render();
+}
+
 function renderDailyTodayPage() {
-  const tk = localDateKey();
+  const calendarToday = localDateKey();
+  const viewKey = dailyBrowseDateKey;
   const titleEl = document.getElementById("dailyTodayTitle");
   const subEl = document.getElementById("dailyTodaySub");
   const progEl = document.getElementById("dailyTodayProgress");
-  if (titleEl) titleEl.textContent = formatHebrewDateLabel(tk);
-  if (subEl) subEl.textContent = "היום שלי — ברגע שעובר חצות נטען יום חדש (לפי השעון במכשיר).";
-  renderDayItemsList(document.getElementById("dailyTodayList"), tk);
-  const pr = dayProgress(dayJournal, tk);
-  if (progEl) progEl.textContent = pr.total ? `${pr.done}/${pr.total} הושלמו` : "אין עדיין משימות — אפשר להוסיף למעלה.";
+  const jumpBtn = document.getElementById("dailyJumpToday");
+
+  if (titleEl) titleEl.textContent = formatHebrewDateLabel(viewKey);
+  if (subEl) {
+    if (viewKey === calendarToday) {
+      subEl.textContent =
+        "רשימה יומית נפרדת מהרעיונות. בחצות — כל משימה בלי V עוברת אוטומטית ליום הבא. החליקי אופקית או השתמשי בכפתורים.";
+    } else {
+      subEl.textContent = `צפייה ב־${formatHebrewDateLabel(viewKey)}. אפשר להוסיף ולערוך משימות ליום הזה.`;
+    }
+  }
+  if (jumpBtn) {
+    const showJump = viewKey !== calendarToday;
+    jumpBtn.classList.toggle("hidden", !showJump);
+  }
+
+  renderDayItemsList(document.getElementById("dailyTodayList"), viewKey);
+  const pr = dayProgress(dayJournal, viewKey);
+  if (progEl) {
+    if (!pr.total) {
+      progEl.textContent =
+        viewKey === calendarToday ? "אין עדיין משימות — אפשר להוסיף למעלה." : "אין משימות ביום הזה.";
+    } else {
+      progEl.textContent = `${pr.done}/${pr.total} הושלמו`;
+    }
+  }
 }
 
 function renderDailyFuturePage() {
-  const tk = localDateKey();
-  const next = nextDayKeyAfter(tk);
-  let fk = loadFutureDayKey(tk);
-  if (fk <= tk) {
-    fk = next;
-    saveFutureDayKey(fk);
-  }
-  const picker = document.getElementById("dailyFuturePicker");
-  if (picker) {
-    picker.min = next;
-    const pv = picker.value;
-    if (pv && pv > tk) fk = pv;
-    else picker.value = fk;
-  }
-
-  const quick = document.getElementById("dailyFutureQuick");
-  if (quick) {
-    quick.innerHTML = "";
-    const keys = futureDayKeysWithItems(dayJournal, tk);
-    const show = [...new Set([fk, ...keys])].sort();
-    for (const k of show) {
-      if (k <= tk) continue;
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = `daily-chip ${k === fk ? "active" : ""}`;
-      const [y, m, d] = k.split("-").map(Number);
-      const dt = new Date(y, m - 1, d);
-      b.textContent = dt.toLocaleDateString("he-IL", { day: "numeric", month: "short" });
-      b.addEventListener("click", () => {
-        saveFutureDayKey(k);
-        if (picker) picker.value = k;
-        render();
-      });
-      quick.appendChild(b);
-    }
-  }
-
-  renderDayItemsList(document.getElementById("dailyFutureList"), fk);
-  const pr = dayProgress(dayJournal, fk);
+  const root = document.getElementById("dailyFuturePlanRoot");
+  const n = renderAggregatedPlanSections(root, "future");
   const progEl = document.getElementById("dailyFutureProgress");
   if (progEl) {
-    progEl.textContent = pr.total ? `${formatHebrewDateLabel(fk)} • ${pr.done}/${pr.total} הושלמו` : `תאריך: ${formatHebrewDateLabel(fk)}`;
+    progEl.textContent = n ? `${n} תתי־משימות נותרו (מתוך הרעיונות)` : "";
   }
 }
 
 function renderDailyHistoryPage() {
-  const tk = localDateKey();
-  const past = pastDayKeysWithItems(dayJournal, tk);
-  const chips = document.getElementById("historyDaysList");
-  const panel = document.getElementById("historyDayPanel");
-  const empty = document.getElementById("historyEmpty");
-  if (!chips || !panel || !empty) return;
+  const root = document.getElementById("dailyHistoryPlanRoot");
+  const n = renderAggregatedPlanSections(root, "past");
+  const progEl = document.getElementById("dailyHistoryProgress");
+  if (progEl) {
+    progEl.textContent = n ? `${n} תתי־משימות בארכיון` : "";
+  }
+}
 
-  chips.innerHTML = "";
-  if (past.length === 0) {
-    empty.classList.remove("hidden");
-    panel.classList.add("hidden");
+function formatShortHebrewDate(dateKey) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString("he-IL", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** כל פריטי «היום שלי» לפי סדר תאריכים ואז סדר ברשימה */
+function getAllDayJournalItemsChronological() {
+  const days = dayJournal?.days ?? {};
+  const keys = Object.keys(days).filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k));
+  keys.sort((a, b) => a.localeCompare(b));
+  const rows = [];
+  for (const dateKey of keys) {
+    const items = days[dateKey]?.items ?? [];
+    if (!Array.isArray(items)) continue;
+    for (const item of items) {
+      if (!item || typeof item !== "object" || !item.id) continue;
+      rows.push({ dateKey, item });
+    }
+  }
+  return rows;
+}
+
+function renderDailyMasterPage() {
+  const container = document.getElementById("dailyMasterList");
+  const progEl = document.getElementById("dailyMasterProgress");
+  if (!container) return;
+  container.innerHTML = "";
+  const rows = getAllDayJournalItemsChronological();
+
+  if (rows.length === 0) {
+    const div = document.createElement("div");
+    div.className = "empty";
+    div.innerHTML = `<div class="empty-text">עדיין אין משימות ב«היום שלי». הוסיפי משימות שם — והן יופיעו כאן ממוספרות.</div>`;
+    container.appendChild(div);
+    if (progEl) progEl.textContent = "";
     return;
   }
-  empty.classList.add("hidden");
 
-  if (!historySelectedKey || !past.includes(historySelectedKey)) historySelectedKey = past[0];
+  let doneC = 0;
+  for (const { item } of rows) {
+    if (item.done) doneC += 1;
+  }
+  const total = rows.length;
 
-  for (const k of past) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = `daily-chip ${k === historySelectedKey ? "active" : ""}`;
-    const [y, m, d] = k.split("-").map(Number);
-    const dt = new Date(y, m - 1, d);
-    b.textContent = dt.toLocaleDateString("he-IL", { day: "numeric", month: "short", year: "2-digit" });
-    b.addEventListener("click", () => {
-      historySelectedKey = k;
-      render();
-    });
-    chips.appendChild(b);
+  let n = 0;
+  for (const { dateKey, item } of rows) {
+    n += 1;
+    const label = dayItemLabel(item);
+    const mark = item.done ? "✓" : "✗";
+    const markClass = item.done ? "dm-mark dm-mark--done" : "dm-mark dm-mark--open";
+    const dateLabel = formatShortHebrewDate(dateKey);
+    const row = document.createElement("div");
+    row.className = `dm-row ${item.done ? "dm-row--done" : ""}`;
+    row.setAttribute("role", "listitem");
+    row.innerHTML = `
+      <span class="dm-num" aria-hidden="true">${n}.</span>
+      <span class="${markClass}" title="${item.done ? "בוצע" : "לא בוצע"}" aria-hidden="true">${mark}</span>
+      <label class="dm-main">
+        <input type="checkbox" class="check" ${item.done ? "checked" : ""} data-action="daily-toggle" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}" aria-label="סימון ביצוע" />
+        <span class="dm-title">${escapeHtml(label || "ללא טקסט")}</span>
+      </label>
+      <span class="dm-date">${escapeHtml(dateLabel)}</span>
+    `;
+    container.appendChild(row);
   }
 
-  panel.classList.remove("hidden");
-  const ht = document.getElementById("historyDayTitle");
-  if (ht) ht.textContent = formatHebrewDateLabel(historySelectedKey);
-  renderDayItemsList(document.getElementById("historyDayList"), historySelectedKey);
-  const pr = dayProgress(dayJournal, historySelectedKey);
-  const hp = document.getElementById("historyDayProgress");
-  if (hp) hp.textContent = pr.total ? `${pr.done}/${pr.total} הושלמו` : "";
+  if (progEl) {
+    progEl.textContent = `סה״כ ${total} • ${doneC} בוצעו • ${total - doneC} פתוחות`;
+  }
+}
+
+function openDailyMasterPdfExport() {
+  const rows = getAllDayJournalItemsChronological();
+  if (rows.length === 0) {
+    toast("אין משימות לייצוא.");
+    return;
+  }
+  const bodyRows = rows
+    .map((r, i) => {
+      const mark = r.item.done ? "✓" : "✗";
+      const t = escapeHtml(dayItemLabel(r.item) || "—");
+      const dl = escapeHtml(formatShortHebrewDate(r.dateKey));
+      return `<tr><td>${i + 1}</td><td>${mark}</td><td>${t}</td><td>${dl}</td></tr>`;
+    })
+    .join("");
+  const title = escapeHtml(APP_DISPLAY_NAME);
+  const stamp = escapeHtml(new Date().toLocaleString("he-IL"));
+  const w = window.open("", "_blank");
+  if (!w) {
+    toast("החלון נחסם — אפשר לאפשר חלונות קופצים ולנסות שוב.");
+    return;
+  }
+  w.document.open();
+  w.document.write(`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"/><title>משימות יומיומיות</title>
+<style>
+  body{font-family:Segoe UI,Calibri,Arial,sans-serif;padding:22px;font-size:14px;line-height:1.45;color:#111;}
+  h1{font-size:1.15rem;margin:0 0 6px;color:#b71c1c;}
+  .meta{color:#555;font-size:0.9rem;margin:0 0 18px;}
+  table{width:100%;border-collapse:collapse;}
+  th,td{border:1px solid #ccc;padding:10px 8px;text-align:right;vertical-align:top;}
+  th{background:#fff5f7;font-weight:700;}
+  @media print{
+    body{padding:12px;}
+    @page{margin:12mm;}
+  }
+</style></head><body>
+<h1>משימות יומיומיות</h1>
+<p class="meta">${title} · ${stamp}</p>
+<table>
+<thead><tr><th>מס׳</th><th>סטטוס</th><th>משימה</th><th>תאריך</th></tr></thead>
+<tbody>${bodyRows}</tbody>
+</table>
+</body></html>`);
+  w.document.close();
+  const doPrint = () => {
+    try {
+      w.focus();
+      w.print();
+    } catch {
+      /* ignore */
+    }
+  };
+  if (w.document.readyState === "complete") queueMicrotask(doPrint);
+  else w.onload = doPrint;
 }
 
 const els = {
@@ -1351,10 +1729,12 @@ function wireGlobalHandlers() {
     if (!ok) return;
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(DAY_JOURNAL_STORAGE_KEY);
-    localStorage.removeItem(FUTURE_DAY_KEY);
+    localStorage.removeItem(LAST_CALENDAR_DAY_KEY);
     state = loadState();
     dayJournal = loadDayJournal();
-    historySelectedKey = null;
+    lastKnownCalendarDayKey = localDateKey();
+    dailyBrowseDateKey = lastKnownCalendarDayKey;
+    persistLastKnownCalendarDay();
     persistAndRender();
   });
 
@@ -1414,6 +1794,9 @@ function wireGlobalHandlers() {
   bindAppMode("bnIdeas", "ideas");
   bindAppMode("topNavFuture", "daily-future");
   bindAppMode("topNavHistory", "daily-history");
+  bindAppMode("topNavDailyMaster", "daily-master");
+
+  document.getElementById("dailyMasterExportPdf")?.addEventListener("click", () => openDailyMasterPdfExport());
 
   document.getElementById("mobileBack")?.addEventListener("click", () => {
     mobile.screen = "ideas";
@@ -1642,37 +2025,57 @@ function wireGlobalHandlers() {
     const input = document.getElementById("dailyTodayInput");
     const t = String(input?.value ?? "").trim();
     if (!t) return;
-    addDayItem(dayJournal, localDateKey(), uid("ditem"), t);
+    addDayItem(dayJournal, dailyBrowseDateKey, uid("ditem"), t);
     saveDayJournal(dayJournal);
     input.value = "";
     render();
   });
 
-  document.getElementById("dailyFutureForm")?.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const tk = localDateKey();
-    const picker = document.getElementById("dailyFuturePicker");
-    let dateKey = picker?.value && picker.value > tk ? picker.value : loadFutureDayKey(tk);
-    if (dateKey <= tk) dateKey = nextDayKeyAfter(tk);
-    const input = document.getElementById("dailyFutureInput");
-    const t = String(input?.value ?? "").trim();
-    if (!t) return;
-    addDayItem(dayJournal, dateKey, uid("ditem"), t);
-    saveDayJournal(dayJournal);
-    saveFutureDayKey(dateKey);
-    if (picker) picker.value = dateKey;
-    input.value = "";
+  document.getElementById("dailyDayPrev")?.addEventListener("click", () => shiftDailyBrowse(-1));
+  document.getElementById("dailyDayNext")?.addEventListener("click", () => shiftDailyBrowse(1));
+  document.getElementById("dailyJumpToday")?.addEventListener("click", () => {
+    dailyBrowseDateKey = localDateKey();
     render();
   });
 
-  document.getElementById("dailyFuturePicker")?.addEventListener("change", (e) => {
-    const tk = localDateKey();
-    const v = e.target?.value;
-    if (v && v > tk) {
-      saveFutureDayKey(v);
-      render();
-    }
-  });
+  const swipeArea = document.getElementById("dailyTodaySwipeArea");
+  if (swipeArea) {
+    let sx = 0;
+    let sy = 0;
+    let st = 0;
+    let skipSwipeGesture = false;
+    swipeArea.addEventListener(
+      "touchstart",
+      (e) => {
+        skipSwipeGesture = false;
+        if (e.touches.length !== 1) return;
+        const el = e.target?.closest?.("button, input, textarea, a, select, label");
+        if (el) skipSwipeGesture = true;
+        sx = e.touches[0].clientX;
+        sy = e.touches[0].clientY;
+        st = Date.now();
+      },
+      { passive: true },
+    );
+    swipeArea.addEventListener(
+      "touchend",
+      (e) => {
+        if (skipSwipeGesture) return;
+        if (!e.changedTouches.length) return;
+        const dt = Date.now() - st;
+        if (dt > DAILY_SWIPE_MAX_MS) return;
+        const x = e.changedTouches[0].clientX;
+        const y = e.changedTouches[0].clientY;
+        const dx = x - sx;
+        const dy = y - sy;
+        if (Math.abs(dx) < DAILY_SWIPE_MIN_PX) return;
+        if (Math.abs(dx) < Math.abs(dy) * 1.2) return;
+        if (dx < 0) shiftDailyBrowse(1);
+        else shiftDailyBrowse(-1);
+      },
+      { passive: true },
+    );
+  }
 
   document.getElementById("dailyEditSave")?.addEventListener("click", () => {
     const dlg = document.getElementById("dailyEditDialog");
@@ -1700,8 +2103,7 @@ function wireGlobalHandlers() {
 }
 
 function render() {
-  const tk = localDateKey();
-  if (tk !== lastKnownCalendarDayKey) lastKnownCalendarDayKey = tk;
+  maybeRollDailyJournalAtMidnight();
 
   updateAppViewsVisibility();
   syncAppNavActive();
@@ -1723,6 +2125,7 @@ function render() {
   if (appMode === "daily-today") renderDailyTodayPage();
   if (appMode === "daily-future") renderDailyFuturePage();
   if (appMode === "daily-history") renderDailyHistoryPage();
+  if (appMode === "daily-master") renderDailyMasterPage();
 
   applyMobileLayout();
 }
@@ -1731,11 +2134,7 @@ ensureSelection();
 wireGlobalHandlers();
 
 setInterval(() => {
-  const k = localDateKey();
-  if (k !== lastKnownCalendarDayKey) {
-    lastKnownCalendarDayKey = k;
-    render();
-  }
+  if (localDateKey() !== lastKnownCalendarDayKey) render();
 }, 60_000);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") render();

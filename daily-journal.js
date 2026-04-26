@@ -9,6 +9,14 @@ export function localDateKey(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+/** הזזת מפתח תאריך yyyy-mm-dd בימים (מספר שלם; יכול להיות שלילי) */
+export function addDaysToDateKey(dateKey, deltaDays) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const x = new Date(y, m - 1, d);
+  x.setDate(x.getDate() + deltaDays);
+  return localDateKey(x);
+}
+
 export function loadDayJournal() {
   try {
     const raw = localStorage.getItem(DAY_JOURNAL_STORAGE_KEY);
