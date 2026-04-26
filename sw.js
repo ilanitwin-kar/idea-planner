@@ -1,4 +1,4 @@
-const CACHE = "idea-planner-cache-v9";
+const CACHE = "idea-planner-cache-v10";
 const ASSETS = [
   "./",
   "./index.html",

@@ -658,14 +658,7 @@ function renderDailyTodayPage() {
   const jumpBtn = document.getElementById("dailyJumpToday");
 
   if (titleEl) titleEl.textContent = formatHebrewDateLabel(viewKey);
-  if (subEl) {
-    if (viewKey === calendarToday) {
-      subEl.textContent =
-        "רשימה יומית נפרדת מהרעיונות. בחצות — כל משימה בלי V עוברת אוטומטית ליום הבא. החליקי אופקית או השתמשי בכפתורים.";
-    } else {
-      subEl.textContent = `צפייה ב־${formatHebrewDateLabel(viewKey)}. אפשר להוסיף ולערוך משימות ליום הזה.`;
-    }
-  }
+  if (subEl) subEl.textContent = "";
   if (jumpBtn) {
     const showJump = viewKey !== calendarToday;
     jumpBtn.classList.toggle("hidden", !showJump);
@@ -1602,25 +1595,39 @@ function renderSubtasks(idea, task, subtasksListEl) {
 
 function wireGlobalHandlers() {
   const topMenuToggle = document.getElementById("topMenuToggle");
-  const topMenuPanel = document.getElementById("topMenuPanel");
-  const topMenuBackdrop = document.getElementById("topMenuBackdrop");
-  if (topMenuToggle && topMenuPanel && topMenuBackdrop) {
-    const setTopMenuOpen = (open) => {
-      topMenuPanel.classList.toggle("hidden", !open);
-      topMenuBackdrop.classList.toggle("hidden", !open);
-      topMenuToggle.setAttribute("aria-expanded", open ? "true" : "false");
-      topMenuBackdrop.setAttribute("aria-hidden", open ? "false" : "true");
-      document.body.style.overflow = open ? "hidden" : "";
+  const topMenuDialog = document.getElementById("topMenuDialog");
+  if (topMenuToggle && topMenuDialog instanceof HTMLDialogElement) {
+    const setExpanded = (open) => topMenuToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    const openMenu = () => {
+      try {
+        topMenuDialog.showModal();
+        setExpanded(true);
+      } catch {
+        // ignore
+      }
     };
+    const closeMenu = () => {
+      try {
+        topMenuDialog.close();
+      } catch {
+        // ignore
+      }
+      setExpanded(false);
+    };
+
     topMenuToggle.addEventListener("click", () => {
-      setTopMenuOpen(topMenuPanel.classList.contains("hidden"));
+      if (topMenuDialog.open) closeMenu();
+      else openMenu();
     });
-    topMenuBackdrop.addEventListener("click", () => setTopMenuOpen(false));
-    topMenuPanel.addEventListener("click", (e) => {
-      if (e.target.closest("button")) setTopMenuOpen(false);
+    topMenuDialog.addEventListener("close", () => setExpanded(false));
+    topMenuDialog.addEventListener("click", (e) => {
+      // click on backdrop
+      if (e.target === topMenuDialog) closeMenu();
+      // click any menu button
+      if (e.target.closest?.("button")) closeMenu();
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !topMenuPanel.classList.contains("hidden")) setTopMenuOpen(false);
+      if (e.key === "Escape" && topMenuDialog.open) closeMenu();
     });
   }
 
@@ -2043,10 +2050,12 @@ function wireGlobalHandlers() {
     let sx = 0;
     let sy = 0;
     let st = 0;
+    let moved = false;
     let skipSwipeGesture = false;
     swipeArea.addEventListener(
       "touchstart",
       (e) => {
+        moved = false;
         skipSwipeGesture = false;
         if (e.touches.length !== 1) return;
         const el = e.target?.closest?.("button, input, textarea, a, select, label");
@@ -2058,9 +2067,25 @@ function wireGlobalHandlers() {
       { passive: true },
     );
     swipeArea.addEventListener(
+      "touchmove",
+      (e) => {
+        if (skipSwipeGesture) return;
+        if (e.touches.length !== 1) return;
+        const x = e.touches[0].clientX;
+        const y = e.touches[0].clientY;
+        const dx = x - sx;
+        const dy = y - sy;
+        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved = true;
+        // If user is clearly scrolling vertically, cancel swipe
+        if (Math.abs(dy) > Math.abs(dx) * 1.4) skipSwipeGesture = true;
+      },
+      { passive: true },
+    );
+    swipeArea.addEventListener(
       "touchend",
       (e) => {
         if (skipSwipeGesture) return;
+        if (!moved) return;
         if (!e.changedTouches.length) return;
         const dt = Date.now() - st;
         if (dt > DAILY_SWIPE_MAX_MS) return;

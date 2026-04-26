@@ -27,25 +27,25 @@
           id="topMenuToggle"
           class="btn top-menu-toggle"
           aria-expanded="false"
-          aria-controls="topMenuPanel"
+          aria-controls="topMenuDialog"
           aria-haspopup="true"
         >
           תפריט
         </button>
       </header>
-      <div id="topMenuBackdrop" class="top-menu-backdrop hidden" aria-hidden="true"></div>
-      <div id="topMenuPanel" class="top-menu-panel hidden" role="region" aria-label="תפריט ראשי">
-        <div class="top-menu-sheet">
+      <dialog id="topMenuDialog" class="top-menu-dialog" aria-label="תפריט ראשי">
+        <div class="top-menu-sheet" role="document">
           <nav class="top-menu-list" aria-label="פעולות">
             <div class="top-menu-list-header">חשבון</div>
             <div id="authStatus" class="top-menu-list-meta" role="status">מצב: מקומי</div>
             <button id="authBtn" class="top-menu-list-item" type="button">התחברות</button>
 
-            <div class="top-menu-list-header">יומן (מתוך הרעיונות)</div>
+            <div class="top-menu-list-header">יומן</div>
             <div class="top-menu-list-pair" role="group" aria-label="עתידי ועבר">
               <button id="topNavFuture" class="top-menu-list-item top-menu-list-item--half journal-top-btn" type="button">עתידי</button>
               <button id="topNavHistory" class="top-menu-list-item top-menu-list-item--half journal-top-btn" type="button">עבר</button>
             </div>
+
             <div class="top-menu-list-header">היום שלי</div>
             <button id="topNavDailyMaster" class="top-menu-list-item" type="button">משימות יומיומיות</button>
 
@@ -55,7 +55,7 @@
             <button id="resetBtn" class="top-menu-list-item top-menu-list-item--danger" type="button" title="איפוס נתונים (מוחק הכל)">איפוס נתונים</button>
           </nav>
         </div>
-      </div>
+      </dialog>
     </div>
 
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
@@ -311,7 +311,6 @@
               <button type="button" id="dailyJumpToday" class="btn btn-ghost daily-day-nav-btn hidden">חזרה להיום</button>
               <button type="button" id="dailyDayNext" class="btn btn-ghost daily-day-nav-btn">יום אחרי</button>
             </div>
-            <p class="daily-swipe-hint" aria-hidden="true">החלקה אופקית על המסך — מעבר מהיר בין ימים</p>
           </div>
         <form id="dailyTodayForm" class="add-row daily-add" autocomplete="off">
           <input id="dailyTodayInput" class="input" type="text" placeholder="משימה ליום הזה…" maxlength="200" />
@@ -327,9 +326,7 @@
       <div class="daily-inner">
         <div class="panel-header daily-header">
           <div class="panel-title">עתידי — מה נותר לבצע</div>
-          <div class="panel-hint">
-            כל מה שמגיע ממסך הרעיונות: משימות ותתי־משימות שקבעת להן תאריך. סימון V מסמן ביצוע ומעביר ל«עבר».
-          </div>
+          <div class="panel-hint"></div>
         </div>
         <div id="dailyFuturePlanRoot" class="plan-aggregate-root"></div>
         <div id="dailyFutureProgress" class="daily-progress"></div>
@@ -340,7 +337,7 @@
       <div class="daily-inner">
         <div class="panel-header daily-header">
           <div class="panel-title">עבר — מה שכבר סימנת</div>
-          <div class="panel-hint">תתי־משימות שסימנת כבוצע. אפשר לבטל את ה־V כדי להחזיר ל«עתידי».</div>
+          <div class="panel-hint"></div>
         </div>
         <div id="dailyHistoryPlanRoot" class="plan-aggregate-root"></div>
         <div id="dailyHistoryProgress" class="daily-progress"></div>
@@ -351,9 +348,7 @@
       <div class="daily-inner">
         <div class="panel-header daily-header">
           <div class="panel-title">משימות יומיומיות</div>
-          <div class="panel-hint">
-            כל מה שהוזן ב«היום שלי» לפי תאריכים. ✓ בוצע, ✗ עדיין לא. סימון כאן או במסך היום — מתעדכן אוטומטית.
-          </div>
+          <div class="panel-hint"></div>
           <div class="daily-master-actions">
             <button id="dailyMasterExportPdf" class="btn" type="button">ייצוא PDF (הדפסה)</button>
           </div>
@@ -369,7 +364,7 @@
     </nav>
 
     <footer class="footer">
-      הנתונים נשמרים מקומית בדפדפן. «היום שלי» — רשימה יומית; «עתידי»/«עבר» — מתוך תתי־משימות מתוזמנות ברעיונות.
+      הנתונים נשמרים מקומית בדפדפן.
     </footer>
 
     <script type="module" src="./app.js"></script>
