@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "Idea Planner: http://localhost:$Port"
+Write-Host "מרכז הרעיונות של אילנית: http://localhost:$Port"
 Write-Host "החלון הזה צריך להישאר פתוח. לעצירה: Ctrl+C"
 Write-Host ""
 

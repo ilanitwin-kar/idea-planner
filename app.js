@@ -6,10 +6,13 @@ import {
   addDayItem,
   toggleDayItem,
   deleteDayItem,
+  updateDayItemTitle,
   pastDayKeysWithItems,
   futureDayKeysWithItems,
   dayProgress,
 } from "./daily-journal.js";
+
+const APP_DISPLAY_NAME = "מרכז הרעיונות של אילנית";
 
 const STORAGE_KEY = "idea-planner:v1";
 const CLOUD_DEBOUNCE_MS = 400;
@@ -284,9 +287,9 @@ function syncAppNavActive() {
     ["ideas", "tnIdeas"],
     ["ideas", "bnIdeas"],
     ["daily-future", "tnDailyFuture"],
-    ["daily-future", "bnDailyFuture"],
+    ["daily-future", "topNavFuture"],
     ["daily-history", "tnDailyHistory"],
-    ["daily-history", "bnDailyHistory"],
+    ["daily-history", "topNavHistory"],
   ];
   for (const [m, id] of pairs) {
     document.getElementById(id)?.classList.toggle("active", appMode === m);
@@ -302,6 +305,20 @@ function updateAppViewsVisibility() {
 
 function dayItemLabel(it) {
   return String(it?.title ?? it?.text ?? "").trim();
+}
+
+function openDailyEditDialog(dateKey, itemId) {
+  const day = dayJournal.days[dateKey];
+  const it = day?.items?.find((x) => x.id === itemId);
+  if (!it) return;
+  const dlg = document.getElementById("dailyEditDialog");
+  const input = document.getElementById("dailyEditInput");
+  if (!dlg || !input) return;
+  input.value = dayItemLabel(it);
+  dlg.dataset.editDateKey = dateKey;
+  dlg.dataset.editItemId = itemId;
+  dlg.showModal();
+  queueMicrotask(() => input.focus());
 }
 
 function renderDayItemsList(container, dateKey) {
@@ -325,7 +342,10 @@ function renderDayItemsList(container, dateKey) {
         <input type="checkbox" ${it.done ? "checked" : ""} data-action="daily-toggle" data-date-key="${dateKey}" data-item-id="${it.id}" />
         <span class="daily-item-text">${label}</span>
       </label>
-      <button type="button" class="btn-daily-del" data-action="daily-delete" data-date-key="${dateKey}" data-item-id="${it.id}" aria-label="מחיקה">×</button>
+      <div class="daily-item-actions">
+        <button type="button" class="btn-daily-edit" data-action="daily-edit" data-date-key="${dateKey}" data-item-id="${it.id}" aria-label="עריכה">עריכה</button>
+        <button type="button" class="btn-daily-del" data-action="daily-delete" data-date-key="${dateKey}" data-item-id="${it.id}" aria-label="מחיקה">×</button>
+      </div>
     `;
     container.appendChild(row);
   }
@@ -1091,12 +1111,13 @@ function renderTasks(idea) {
           <div class="subtasks-header">
             <div>תתי־משימות (סימון המשימה מתבצע אוטומטית כשכולן מסומנות)</div>
           </div>
-          <form class="add-row" data-add-subtask-form="${task.id}" autocomplete="off">
+          <form class="add-row add-row--subtask" data-add-subtask-form="${task.id}" autocomplete="off">
             <input class="input" name="subtaskTitle" type="text" placeholder="תת־משימה חדשה…" maxlength="160" required />
-            <input class="dt" name="subtaskStart" type="datetime-local" title="התחלה" />
-            <input class="dt" name="subtaskEnd" type="datetime-local" title="סיום (אופציונלי)" />
-            <button class="btn" type="submit">הוספה</button>
+            <label class="dt-label"><span class="dt-label-text">התחלה</span><input class="dt" name="subtaskStart" type="datetime-local" title="התחלה" /></label>
+            <label class="dt-label"><span class="dt-label-text">סיום (רשות)</span><input class="dt" name="subtaskEnd" type="datetime-local" title="סיום (אופציונלי)" /></label>
+            <button class="btn btn--subtask-add" type="submit">הוספת תת־משימה</button>
           </form>
+          <div class="subtask-form-hint">אפשר למלא רק כותרת — התאריכים עוזרים ללוח השנה והתזכורות. לסיום לוחצים על הכפתור או Enter בשדה הטקסט.</div>
           <div class="subtasks-list" data-subtasks-list="${task.id}"></div>
         </div>
       </div>
@@ -1140,10 +1161,6 @@ function renderSubtasks(idea, task, subtasksListEl) {
   const subtasks = task.subtasks ?? [];
 
   if (subtasks.length === 0) {
-    const div = document.createElement("div");
-    div.className = "empty";
-    div.innerHTML = `<div class="empty-text">הוסיפי תת־משימה ראשונה למשימה הזו.</div>`;
-    subtasksListEl.appendChild(div);
     return;
   }
 
@@ -1153,9 +1170,9 @@ function renderSubtasks(idea, task, subtasksListEl) {
     row.innerHTML = `
       <input class="check" type="checkbox" ${sub.done ? "checked" : ""} aria-label="סימון תת־משימה" data-action="toggle-subtask" data-subtask-id="${sub.id}" />
       <div class="subtask-title">${escapeHtml(sub.title || "ללא שם")}</div>
-      <input class="dt" type="datetime-local" value="${escapeHtml(formatDateTimeValue(sub.startsAt))}" data-action="set-subtask-start" data-subtask-id="${sub.id}" title="התחלה" />
-      <input class="dt" type="datetime-local" value="${escapeHtml(formatDateTimeValue(sub.endsAt))}" data-action="set-subtask-end" data-subtask-id="${sub.id}" title="סיום" />
-      <button class="icon-btn danger" type="button" data-action="delete-subtask" data-subtask-id="${sub.id}" title="מחיקת תת־משימה">🗑</button>
+      <label class="dt-label"><span class="dt-label-text">התחלה</span><input class="dt" type="datetime-local" value="${escapeHtml(formatDateTimeValue(sub.startsAt))}" data-action="set-subtask-start" data-subtask-id="${sub.id}" title="התחלה" /></label>
+      <label class="dt-label"><span class="dt-label-text">סיום</span><input class="dt" type="datetime-local" value="${escapeHtml(formatDateTimeValue(sub.endsAt))}" data-action="set-subtask-end" data-subtask-id="${sub.id}" title="סיום" /></label>
+      <button class="icon-btn danger subtask-delete" type="button" data-action="delete-subtask" data-subtask-id="${sub.id}" title="מחיקת תת־משימה">🗑</button>
     `;
     subtasksListEl.appendChild(row);
   }
@@ -1206,6 +1223,29 @@ function renderSubtasks(idea, task, subtasksListEl) {
 }
 
 function wireGlobalHandlers() {
+  const topMenuToggle = document.getElementById("topMenuToggle");
+  const topMenuPanel = document.getElementById("topMenuPanel");
+  const topMenuBackdrop = document.getElementById("topMenuBackdrop");
+  if (topMenuToggle && topMenuPanel && topMenuBackdrop) {
+    const setTopMenuOpen = (open) => {
+      topMenuPanel.classList.toggle("hidden", !open);
+      topMenuBackdrop.classList.toggle("hidden", !open);
+      topMenuToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      topMenuBackdrop.setAttribute("aria-hidden", open ? "false" : "true");
+      document.body.style.overflow = open ? "hidden" : "";
+    };
+    topMenuToggle.addEventListener("click", () => {
+      setTopMenuOpen(topMenuPanel.classList.contains("hidden"));
+    });
+    topMenuBackdrop.addEventListener("click", () => setTopMenuOpen(false));
+    topMenuPanel.addEventListener("click", (e) => {
+      if (e.target.closest("button")) setTopMenuOpen(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !topMenuPanel.classList.contains("hidden")) setTopMenuOpen(false);
+    });
+  }
+
   const settingsBtn = document.getElementById("settingsBtn");
   const settingsDialog = document.getElementById("settingsDialog");
   const setBefore30 = document.getElementById("setRemindBefore30");
@@ -1372,11 +1412,8 @@ function wireGlobalHandlers() {
   bindAppMode("tnDailyHistory", "daily-history");
   bindAppMode("bnDailyToday", "daily-today");
   bindAppMode("bnIdeas", "ideas");
-  bindAppMode("bnDailyFuture", "daily-future");
-  bindAppMode("bnDailyHistory", "daily-history");
-  document.getElementById("bnSettings")?.addEventListener("click", () => {
-    document.getElementById("settingsBtn")?.click();
-  });
+  bindAppMode("topNavFuture", "daily-future");
+  bindAppMode("topNavHistory", "daily-history");
 
   document.getElementById("mobileBack")?.addEventListener("click", () => {
     mobile.screen = "ideas";
@@ -1409,7 +1446,7 @@ function wireGlobalHandlers() {
 
   exportEmail?.addEventListener("click", () => {
     const idea = getSelectedIdea();
-    const subject = encodeURIComponent(`Idea Planner: ${idea?.title || "רעיון"}`);
+    const subject = encodeURIComponent(`${APP_DISPLAY_NAME}: ${idea?.title || "רעיון"}`);
     const body = encodeURIComponent(String(exportText?.value ?? ""));
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   });
@@ -1426,7 +1463,7 @@ function wireGlobalHandlers() {
       <html lang="he" dir="rtl">
         <head>
           <meta charset="UTF-8" />
-          <title>${escapeHtml(idea?.title || "Idea Planner")}</title>
+          <title>${escapeHtml(idea?.title || APP_DISPLAY_NAME)}</title>
           <style>
             body{ font-family: Arial, sans-serif; padding: 18px; direction: rtl; }
             h1{ margin:0 0 8px; }
@@ -1500,6 +1537,14 @@ function wireGlobalHandlers() {
       deleteDayItem(dayJournal, dk, id);
       saveDayJournal(dayJournal);
       render();
+      return;
+    }
+
+    if (action === "daily-edit") {
+      const dk = btn.getAttribute("data-date-key");
+      const id = btn.getAttribute("data-item-id");
+      if (!dk || !id) return;
+      openDailyEditDialog(dk, id);
       return;
     }
 
@@ -1626,6 +1671,30 @@ function wireGlobalHandlers() {
     if (v && v > tk) {
       saveFutureDayKey(v);
       render();
+    }
+  });
+
+  document.getElementById("dailyEditSave")?.addEventListener("click", () => {
+    const dlg = document.getElementById("dailyEditDialog");
+    const input = document.getElementById("dailyEditInput");
+    const dk = dlg?.dataset.editDateKey;
+    const id = dlg?.dataset.editItemId;
+    const t = String(input?.value ?? "").trim();
+    if (!dk || !id) return;
+    if (!t) {
+      toast("נא להזין טקסט למשימה.");
+      return;
+    }
+    updateDayItemTitle(dayJournal, dk, id, t);
+    saveDayJournal(dayJournal);
+    dlg?.close();
+    render();
+  });
+
+  document.getElementById("dailyEditInput")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      document.getElementById("dailyEditSave")?.click();
     }
   });
 }

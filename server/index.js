@@ -168,6 +168,6 @@ app.get("*", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Idea Planner push server on http://localhost:${PORT}`);
+  console.log(`מרכז הרעיונות של אילנית — שרת תזכורות: http://localhost:${PORT}`);
 });
 

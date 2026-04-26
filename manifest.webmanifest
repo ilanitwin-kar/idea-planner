@@ -1,12 +1,12 @@
 {
-  "name": "Idea Planner",
-  "short_name": "IdeaPlanner",
+  "name": "מרכז הרעיונות של אילנית",
+  "short_name": "מרכז אילנית",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#0b1020",
-  "theme_color": "#0b1020",
+  "background_color": "#ffffff",
+  "theme_color": "#c41e3a",
   "icons": [
     {
       "src": "./icons/app-icon.svg",

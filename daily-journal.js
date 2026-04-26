@@ -53,6 +53,17 @@ export function deleteDayItem(journal, dateKey, itemId) {
   if (day.items.length === 0) delete journal.days[dateKey];
 }
 
+export function updateDayItemTitle(journal, dateKey, itemId, title) {
+  const day = journal.days[dateKey];
+  if (!day?.items) return;
+  const it = day.items.find((x) => x.id === itemId);
+  if (!it) return;
+  const t = String(title ?? "").trim();
+  if (!t) return;
+  it.title = t;
+  if ("text" in it) delete it.text;
+}
+
 /** תאריכים בעבר (לפני todayKey) שיש בהם פריטים, מהחדש לישן */
 export function pastDayKeysWithItems(journal, todayKey) {
   const keys = Object.keys(journal.days).filter((k) => k < todayKey);

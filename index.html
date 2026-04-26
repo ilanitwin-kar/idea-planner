@@ -3,16 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0b1020" />
+    <meta name="theme-color" content="#c41e3a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>Idea Planner</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <meta name="apple-mobile-web-app-title" content="מרכז אילנית" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>מרכז הרעיונות של אילנית</title>
     <link rel="stylesheet" href="./styles.css" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./icons/app-icon.svg" />
@@ -21,24 +16,49 @@
     <div class="site-header-sticky">
       <header class="topbar">
         <div class="brand">
-          <div class="logo" aria-hidden="true">IP</div>
+          <div class="logo" aria-hidden="true">א</div>
           <div>
-            <div class="title">Idea Planner</div>
+            <div class="title">מרכז הרעיונות של אילנית</div>
             <div class="subtitle">רעיונות → משימות → תתי־משימות עם תזמון</div>
           </div>
         </div>
-        <div class="top-actions">
-          <div class="auth">
-            <div id="authStatus" class="auth-status">מצב: מקומי</div>
-            <button id="authBtn" class="btn btn-ghost" type="button">התחברות</button>
-          </div>
-          <button id="settingsBtn" class="btn btn-ghost" type="button">הגדרות</button>
-          <button id="notifyBtn" class="btn btn-ghost" type="button" title="הפעלת התראות לתזכורות">התראות</button>
-          <button id="resetBtn" class="btn btn-ghost" type="button" title="איפוס נתונים (מוחק הכל)">
-            איפוס
-          </button>
-        </div>
+        <button
+          type="button"
+          id="topMenuToggle"
+          class="btn top-menu-toggle"
+          aria-expanded="false"
+          aria-controls="topMenuPanel"
+          aria-haspopup="true"
+        >
+          תפריט
+        </button>
       </header>
+      <div id="topMenuBackdrop" class="top-menu-backdrop hidden" aria-hidden="true"></div>
+      <div id="topMenuPanel" class="top-menu-panel hidden" role="region" aria-label="תפריט ראשי">
+        <div class="top-menu-inner">
+          <div class="top-menu-section">
+            <div class="top-menu-section-title">חשבון</div>
+            <div id="authStatus" class="auth-status top-menu-status">מצב: מקומי</div>
+            <button id="authBtn" class="btn btn-ghost top-menu-item" type="button">התחברות</button>
+          </div>
+          <div class="top-menu-section">
+            <div class="top-menu-section-title">יומן יומי</div>
+            <p class="top-menu-hint">נפרד ממסך הרעיונות — רשימות לפי תאריך.</p>
+            <div class="top-menu-chips">
+              <button id="topNavFuture" class="journal-top-btn" type="button">עתידי</button>
+              <button id="topNavHistory" class="journal-top-btn" type="button">עבר</button>
+            </div>
+          </div>
+          <div class="top-menu-section">
+            <div class="top-menu-section-title">אפליקציה</div>
+            <button id="settingsBtn" class="btn btn-ghost top-menu-item" type="button">הגדרות</button>
+            <button id="notifyBtn" class="btn btn-ghost top-menu-item" type="button" title="הפעלת התראות לתזכורות">התראות</button>
+            <button id="resetBtn" class="btn btn-ghost top-menu-item top-menu-item--danger" type="button" title="איפוס נתונים (מוחק הכל)">
+              איפוס נתונים
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
@@ -124,6 +144,18 @@
           <button class="btn btn-ghost" value="cancel" type="submit">סגירה</button>
         </div>
         <div id="exportHint" class="dialog-hint"></div>
+      </form>
+    </dialog>
+
+    <dialog id="dailyEditDialog" class="dialog">
+      <form method="dialog" class="dialog-inner" id="dailyEditForm">
+        <div class="dialog-title">עריכת משימה</div>
+        <div class="dialog-text">עדכון הטקסט נשמר ביומן היומי.</div>
+        <input id="dailyEditInput" class="input daily-edit-input" type="text" maxlength="200" autocomplete="off" />
+        <div class="dialog-actions">
+          <button id="dailyEditSave" class="btn" type="button">שמירה</button>
+          <button class="btn btn-ghost" value="cancel" type="submit">ביטול</button>
+        </div>
       </form>
     </dialog>
 
@@ -329,9 +361,6 @@
     <nav class="bottom-nav" aria-label="תפריט תחתון">
       <button id="bnDailyToday" class="bn-item active" type="button">היום שלי</button>
       <button id="bnIdeas" class="bn-item" type="button">רעיונות</button>
-      <button id="bnDailyFuture" class="bn-item" type="button">עתידי</button>
-      <button id="bnDailyHistory" class="bn-item" type="button">עבר</button>
-      <button id="bnSettings" class="bn-item" type="button">הגדרות</button>
     </nav>
 
     <footer class="footer">
