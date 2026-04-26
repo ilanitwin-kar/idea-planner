@@ -7,8 +7,8 @@ export default defineConfig({
     host: true,
   },
   build: {
-    outDir: "server/public",
-    emptyOutDir: true
-  }
+    outDir: "dist",
+    emptyOutDir: true,
+  },
 });
 

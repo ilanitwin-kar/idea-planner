@@ -3,4 +3,5 @@ dist
 .DS_Store
 server/.env
 server/vapid.json
+server/public
 

@@ -1,18 +1,30 @@
-const CACHE = "idea-planner-cache-v10";
-const ASSETS = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./daily-journal.js",
-  "./manifest.webmanifest",
-  "./icons/app-icon.svg",
-  "./cloud-sync.js",
-  "./firebase-config.js",
+const CACHE = "idea-planner-cache-v11";
+
+/** קבצים שקיימים תמיד אחרי build — בלי נתיבי hashed שלא ייכשלו ב־addAll */
+const PRECACHE = [
+  "/",
+  "/index.html",
+  "/manifest.webmanifest",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    (async () => {
+      const cache = await caches.open(CACHE);
+      for (const url of PRECACHE) {
+        try {
+          const res = await fetch(url, { cache: "reload" });
+          if (res.ok) await cache.put(url, res);
+        } catch {
+          /* התקנה לא נכשלת בגלל קובץ בודד */
+        }
+      }
+      await self.skipWaiting();
+    })(),
+  );
 });
 
 self.addEventListener("activate", (event) => {
@@ -53,11 +65,12 @@ self.addEventListener("push", (event) => {
   const title = data.title || "תזכורת";
   const body = data.body || "";
   const url = data.url || "/";
+  const icon = data.icon || "/icons/icon-192.png";
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: data.icon || undefined,
-      badge: data.badge || undefined,
+      icon,
+      badge: data.badge || icon,
       data: { url },
     }),
   );
@@ -78,4 +91,3 @@ self.addEventListener("notificationclick", (event) => {
     }),
   );
 });
-
