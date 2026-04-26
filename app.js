@@ -633,6 +633,15 @@ function renderDayItemsList(container, dateKey) {
 
 function shiftDailyBrowse(deltaDays) {
   dailyBrowseDateKey = addDaysToDateKey(dailyBrowseDateKey, deltaDays);
+  const swipeArea = document.getElementById("dailyTodaySwipeArea");
+  if (swipeArea) {
+    swipeArea.classList.remove("daily-changed");
+    // reflow to restart animation
+    void swipeArea.offsetWidth;
+    swipeArea.classList.add("daily-changed");
+    clearTimeout(shiftDailyBrowse._t);
+    shiftDailyBrowse._t = setTimeout(() => swipeArea.classList.remove("daily-changed"), 320);
+  }
   render();
 }
 
@@ -649,6 +658,15 @@ function renderDailyTodayPage() {
   if (jumpBtn) {
     const showJump = viewKey !== calendarToday;
     jumpBtn.classList.toggle("hidden", !showJump);
+  }
+
+  // צבע עדין משתנה לפי תאריך (כדי להרגיש שהיום התחלף)
+  const swipeArea = document.getElementById("dailyTodaySwipeArea");
+  if (swipeArea) {
+    let h = 0;
+    for (let i = 0; i < viewKey.length; i++) h = (h * 31 + viewKey.charCodeAt(i)) % 360;
+    const accent = `hsla(${h}, 92%, 58%, 0.14)`;
+    swipeArea.style.setProperty("--daily-accent", accent);
   }
 
   renderDayItemsList(document.getElementById("dailyTodayList"), viewKey);
