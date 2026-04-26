@@ -1,3 +1,16 @@
+import {
+  DAY_JOURNAL_STORAGE_KEY,
+  loadDayJournal,
+  saveDayJournal,
+  localDateKey,
+  addDayItem,
+  toggleDayItem,
+  deleteDayItem,
+  pastDayKeysWithItems,
+  futureDayKeysWithItems,
+  dayProgress,
+} from "./daily-journal.js";
+
 const STORAGE_KEY = "idea-planner:v1";
 const CLOUD_DEBOUNCE_MS = 400;
 
@@ -205,6 +218,218 @@ function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
+const APP_MODE_KEY = "idea-planner:app-mode:v1";
+const FUTURE_DAY_KEY = "idea-planner:future-day-key:v1";
+
+function loadAppMode() {
+  try {
+    const v = localStorage.getItem(APP_MODE_KEY);
+    if (v === "ideas" || v === "daily-today" || v === "daily-future" || v === "daily-history") return v;
+  } catch {
+    /* ignore */
+  }
+  return "daily-today";
+}
+
+let appMode = loadAppMode();
+let dayJournal = loadDayJournal();
+let historySelectedKey = null;
+let lastKnownCalendarDayKey = localDateKey();
+
+function nextDayKeyAfter(todayKey) {
+  const [y, m, d] = todayKey.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + 1);
+  return localDateKey(dt);
+}
+
+function loadFutureDayKey(todayKey) {
+  try {
+    const v = localStorage.getItem(FUTURE_DAY_KEY);
+    if (v && typeof v === "string" && v > todayKey) return v;
+  } catch {
+    /* ignore */
+  }
+  return nextDayKeyAfter(todayKey);
+}
+
+function saveFutureDayKey(k) {
+  localStorage.setItem(FUTURE_DAY_KEY, k);
+}
+
+function formatHebrewDateLabel(dateKey) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+}
+
+function setAppMode(mode) {
+  appMode = mode;
+  try {
+    localStorage.setItem(APP_MODE_KEY, mode);
+  } catch {
+    /* ignore */
+  }
+  document.body.classList.toggle("app-mode-ideas", mode === "ideas");
+  if (mode === "ideas" && isMobile()) mobile.screen = "ideas";
+  syncAppNavActive();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  render();
+}
+
+function syncAppNavActive() {
+  const pairs = [
+    ["daily-today", "tnDailyToday"],
+    ["daily-today", "bnDailyToday"],
+    ["ideas", "tnIdeas"],
+    ["ideas", "bnIdeas"],
+    ["daily-future", "tnDailyFuture"],
+    ["daily-future", "bnDailyFuture"],
+    ["daily-history", "tnDailyHistory"],
+    ["daily-history", "bnDailyHistory"],
+  ];
+  for (const [m, id] of pairs) {
+    document.getElementById(id)?.classList.toggle("active", appMode === m);
+  }
+}
+
+function updateAppViewsVisibility() {
+  document.getElementById("viewIdeas")?.classList.toggle("hidden", appMode !== "ideas");
+  document.getElementById("viewDailyToday")?.classList.toggle("hidden", appMode !== "daily-today");
+  document.getElementById("viewDailyFuture")?.classList.toggle("hidden", appMode !== "daily-future");
+  document.getElementById("viewDailyHistory")?.classList.toggle("hidden", appMode !== "daily-history");
+}
+
+function dayItemLabel(it) {
+  return String(it?.title ?? it?.text ?? "").trim();
+}
+
+function renderDayItemsList(container, dateKey) {
+  if (!container) return;
+  container.innerHTML = "";
+  const day = dayJournal.days[dateKey];
+  const items = day?.items ?? [];
+  if (items.length === 0) {
+    const div = document.createElement("div");
+    div.className = "empty";
+    div.innerHTML = `<div class="empty-text">אין משימות. הוסיפי שורה למעלה.</div>`;
+    container.appendChild(div);
+    return;
+  }
+  for (const it of items) {
+    const label = escapeHtml(dayItemLabel(it));
+    const row = document.createElement("div");
+    row.className = `daily-item ${it.done ? "done" : ""}`;
+    row.innerHTML = `
+      <label class="daily-check">
+        <input type="checkbox" ${it.done ? "checked" : ""} data-action="daily-toggle" data-date-key="${dateKey}" data-item-id="${it.id}" />
+        <span class="daily-item-text">${label}</span>
+      </label>
+      <button type="button" class="btn-daily-del" data-action="daily-delete" data-date-key="${dateKey}" data-item-id="${it.id}" aria-label="מחיקה">×</button>
+    `;
+    container.appendChild(row);
+  }
+}
+
+function renderDailyTodayPage() {
+  const tk = localDateKey();
+  const titleEl = document.getElementById("dailyTodayTitle");
+  const subEl = document.getElementById("dailyTodaySub");
+  const progEl = document.getElementById("dailyTodayProgress");
+  if (titleEl) titleEl.textContent = formatHebrewDateLabel(tk);
+  if (subEl) subEl.textContent = "היום שלי — ברגע שעובר חצות נטען יום חדש (לפי השעון במכשיר).";
+  renderDayItemsList(document.getElementById("dailyTodayList"), tk);
+  const pr = dayProgress(dayJournal, tk);
+  if (progEl) progEl.textContent = pr.total ? `${pr.done}/${pr.total} הושלמו` : "אין עדיין משימות — אפשר להוסיף למעלה.";
+}
+
+function renderDailyFuturePage() {
+  const tk = localDateKey();
+  const next = nextDayKeyAfter(tk);
+  let fk = loadFutureDayKey(tk);
+  if (fk <= tk) {
+    fk = next;
+    saveFutureDayKey(fk);
+  }
+  const picker = document.getElementById("dailyFuturePicker");
+  if (picker) {
+    picker.min = next;
+    const pv = picker.value;
+    if (pv && pv > tk) fk = pv;
+    else picker.value = fk;
+  }
+
+  const quick = document.getElementById("dailyFutureQuick");
+  if (quick) {
+    quick.innerHTML = "";
+    const keys = futureDayKeysWithItems(dayJournal, tk);
+    const show = [...new Set([fk, ...keys])].sort();
+    for (const k of show) {
+      if (k <= tk) continue;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = `daily-chip ${k === fk ? "active" : ""}`;
+      const [y, m, d] = k.split("-").map(Number);
+      const dt = new Date(y, m - 1, d);
+      b.textContent = dt.toLocaleDateString("he-IL", { day: "numeric", month: "short" });
+      b.addEventListener("click", () => {
+        saveFutureDayKey(k);
+        if (picker) picker.value = k;
+        render();
+      });
+      quick.appendChild(b);
+    }
+  }
+
+  renderDayItemsList(document.getElementById("dailyFutureList"), fk);
+  const pr = dayProgress(dayJournal, fk);
+  const progEl = document.getElementById("dailyFutureProgress");
+  if (progEl) {
+    progEl.textContent = pr.total ? `${formatHebrewDateLabel(fk)} • ${pr.done}/${pr.total} הושלמו` : `תאריך: ${formatHebrewDateLabel(fk)}`;
+  }
+}
+
+function renderDailyHistoryPage() {
+  const tk = localDateKey();
+  const past = pastDayKeysWithItems(dayJournal, tk);
+  const chips = document.getElementById("historyDaysList");
+  const panel = document.getElementById("historyDayPanel");
+  const empty = document.getElementById("historyEmpty");
+  if (!chips || !panel || !empty) return;
+
+  chips.innerHTML = "";
+  if (past.length === 0) {
+    empty.classList.remove("hidden");
+    panel.classList.add("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+
+  if (!historySelectedKey || !past.includes(historySelectedKey)) historySelectedKey = past[0];
+
+  for (const k of past) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = `daily-chip ${k === historySelectedKey ? "active" : ""}`;
+    const [y, m, d] = k.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    b.textContent = dt.toLocaleDateString("he-IL", { day: "numeric", month: "short", year: "2-digit" });
+    b.addEventListener("click", () => {
+      historySelectedKey = k;
+      render();
+    });
+    chips.appendChild(b);
+  }
+
+  panel.classList.remove("hidden");
+  const ht = document.getElementById("historyDayTitle");
+  if (ht) ht.textContent = formatHebrewDateLabel(historySelectedKey);
+  renderDayItemsList(document.getElementById("historyDayList"), historySelectedKey);
+  const pr = dayProgress(dayJournal, historySelectedKey);
+  const hp = document.getElementById("historyDayProgress");
+  if (hp) hp.textContent = pr.total ? `${pr.done}/${pr.total} הושלמו` : "";
+}
+
 const els = {
   resetBtn: document.getElementById("resetBtn"),
   addIdeaForm: document.getElementById("addIdeaForm"),
@@ -271,6 +496,10 @@ function isMobile() {
 
 function applyMobileLayout() {
   if (!isMobile()) {
+    document.body.classList.remove("m-ideas", "m-detail");
+    return;
+  }
+  if (appMode !== "ideas") {
     document.body.classList.remove("m-ideas", "m-detail");
     return;
   }
@@ -1078,10 +1307,14 @@ function wireGlobalHandlers() {
   });
 
   els.resetBtn.addEventListener("click", () => {
-    const ok = confirm("למחוק את כל הנתונים? (איפוס מלא)");
+    const ok = confirm("למחוק את כל הנתונים? (רעיונות + יומן יומי — איפוס מלא)");
     if (!ok) return;
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(DAY_JOURNAL_STORAGE_KEY);
+    localStorage.removeItem(FUTURE_DAY_KEY);
     state = loadState();
+    dayJournal = loadDayJournal();
+    historySelectedKey = null;
     persistAndRender();
   });
 
@@ -1130,35 +1363,18 @@ function wireGlobalHandlers() {
   els.tabCalendar.addEventListener("click", () => setTab("calendar"));
   els.tabTasks.addEventListener("click", () => setTab("tasks"));
 
-  const bn = {
-    home: document.getElementById("bnHome"),
-    calendar: document.getElementById("bnCalendar"),
-    tasks: document.getElementById("bnTasks"),
-    settings: document.getElementById("bnSettings"),
+  const bindAppMode = (id, mode) => {
+    document.getElementById(id)?.addEventListener("click", () => setAppMode(mode));
   };
-  const setBottom = (key) => {
-    for (const [k, el] of Object.entries(bn)) el?.classList.toggle("active", k === key);
-  };
-  bn.home?.addEventListener("click", () => {
-    setBottom("home");
-    setTab("idea");
-    if (isMobile()) mobile.screen = "ideas";
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  });
-  bn.calendar?.addEventListener("click", () => {
-    setBottom("calendar");
-    setTab("calendar");
-    if (isMobile()) mobile.screen = "detail";
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  });
-  bn.tasks?.addEventListener("click", () => {
-    setBottom("tasks");
-    setTab("tasks");
-    if (isMobile()) mobile.screen = "detail";
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  });
-  bn.settings?.addEventListener("click", () => {
-    setBottom("settings");
+  bindAppMode("tnDailyToday", "daily-today");
+  bindAppMode("tnIdeas", "ideas");
+  bindAppMode("tnDailyFuture", "daily-future");
+  bindAppMode("tnDailyHistory", "daily-history");
+  bindAppMode("bnDailyToday", "daily-today");
+  bindAppMode("bnIdeas", "ideas");
+  bindAppMode("bnDailyFuture", "daily-future");
+  bindAppMode("bnDailyHistory", "daily-history");
+  document.getElementById("bnSettings")?.addEventListener("click", () => {
     document.getElementById("settingsBtn")?.click();
   });
 
@@ -1277,6 +1493,16 @@ function wireGlobalHandlers() {
     if (!btn) return;
     const action = btn.getAttribute("data-action");
 
+    if (action === "daily-delete") {
+      const dk = btn.getAttribute("data-date-key");
+      const id = btn.getAttribute("data-item-id");
+      if (!dk || !id) return;
+      deleteDayItem(dayJournal, dk, id);
+      saveDayJournal(dayJournal);
+      render();
+      return;
+    }
+
     if (action === "open-subtask") {
       const subId = btn.getAttribute("data-subtask-id");
       if (subId) openEventDialog(subId);
@@ -1325,6 +1551,16 @@ function wireGlobalHandlers() {
     if (!(el instanceof HTMLInputElement)) return;
     const action = el.getAttribute("data-action");
 
+    if (action === "daily-toggle") {
+      const dk = el.getAttribute("data-date-key");
+      const id = el.getAttribute("data-item-id");
+      if (!dk || !id) return;
+      toggleDayItem(dayJournal, dk, id);
+      saveDayJournal(dayJournal);
+      render();
+      return;
+    }
+
     if (action === "toggle-idea-done") {
       const id = el.getAttribute("data-idea-id");
       if (!id) return;
@@ -1355,23 +1591,86 @@ function wireGlobalHandlers() {
       if (pushServer.subscribed) upsertReminderForSubtask(subId).catch(() => {});
     }
   });
+
+  document.getElementById("dailyTodayForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = document.getElementById("dailyTodayInput");
+    const t = String(input?.value ?? "").trim();
+    if (!t) return;
+    addDayItem(dayJournal, localDateKey(), uid("ditem"), t);
+    saveDayJournal(dayJournal);
+    input.value = "";
+    render();
+  });
+
+  document.getElementById("dailyFutureForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const tk = localDateKey();
+    const picker = document.getElementById("dailyFuturePicker");
+    let dateKey = picker?.value && picker.value > tk ? picker.value : loadFutureDayKey(tk);
+    if (dateKey <= tk) dateKey = nextDayKeyAfter(tk);
+    const input = document.getElementById("dailyFutureInput");
+    const t = String(input?.value ?? "").trim();
+    if (!t) return;
+    addDayItem(dayJournal, dateKey, uid("ditem"), t);
+    saveDayJournal(dayJournal);
+    saveFutureDayKey(dateKey);
+    if (picker) picker.value = dateKey;
+    input.value = "";
+    render();
+  });
+
+  document.getElementById("dailyFuturePicker")?.addEventListener("change", (e) => {
+    const tk = localDateKey();
+    const v = e.target?.value;
+    if (v && v > tk) {
+      saveFutureDayKey(v);
+      render();
+    }
+  });
 }
 
 function render() {
-  renderIdeas();
-  renderIdeaView();
-  rebuildCalendarFiltersUI();
-  applyMobileLayout();
+  const tk = localDateKey();
+  if (tk !== lastKnownCalendarDayKey) lastKnownCalendarDayKey = tk;
 
-  const s = computeHomeSummary();
-  if (els.hsIdeas) els.hsIdeas.textContent = String(s.ideasCount);
-  if (els.hsTasks) els.hsTasks.textContent = `${s.tasksDone}/${s.tasksTotal}`;
-  if (els.hsToday) els.hsToday.textContent = String(s.dueToday);
-  if (els.hsNext) els.hsNext.textContent = s.nextText;
+  updateAppViewsVisibility();
+  syncAppNavActive();
+  document.body.classList.toggle("app-mode-ideas", appMode === "ideas");
+
+  if (appMode === "ideas") {
+    ensureSelection();
+    renderIdeas();
+    renderIdeaView();
+    rebuildCalendarFiltersUI();
+
+    const s = computeHomeSummary();
+    if (els.hsIdeas) els.hsIdeas.textContent = String(s.ideasCount);
+    if (els.hsTasks) els.hsTasks.textContent = `${s.tasksDone}/${s.tasksTotal}`;
+    if (els.hsToday) els.hsToday.textContent = String(s.dueToday);
+    if (els.hsNext) els.hsNext.textContent = s.nextText;
+  }
+
+  if (appMode === "daily-today") renderDailyTodayPage();
+  if (appMode === "daily-future") renderDailyFuturePage();
+  if (appMode === "daily-history") renderDailyHistoryPage();
+
+  applyMobileLayout();
 }
 
 ensureSelection();
 wireGlobalHandlers();
+
+setInterval(() => {
+  const k = localDateKey();
+  if (k !== lastKnownCalendarDayKey) {
+    lastKnownCalendarDayKey = k;
+    render();
+  }
+}, 60_000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") render();
+});
 
 async function bootCloud() {
   try {

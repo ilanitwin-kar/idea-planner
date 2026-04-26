@@ -1,20 +1,16 @@
+# Free tier: no persistent disk (disks block removed). Server SQLite/VAPID files are ephemeral.
+# For persistent disk, use a paid Render plan and restore disk + DATA_DIR=/var/data
 services:
   - type: web
     name: idea-planner
     env: node
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: npm install && npm install --prefix server && npm run build
     startCommand: npm run start
     healthCheckPath: /health
-    disk:
-      name: idea-planner-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: PORT
         value: 10000
-      - key: DATA_DIR
-        value: /var/data
       - key: VAPID_SUBJECT
         value: mailto:you@example.com
 

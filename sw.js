@@ -1,28 +1,45 @@
-const CACHE = "idea-planner-cache-v1";
-const ASSETS = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.webmanifest", "/cloud-sync.js", "/firebase-config.js"];
+const CACHE = "idea-planner-cache-v3";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./daily-journal.js",
+  "./manifest.webmanifest",
+  "./icons/app-icon.svg",
+  "./cloud-sync.js",
+  "./firebase-config.js",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  );
 });
 
+/* רשת קודם — עדכוני אפליקציה נטענים; במצב offline נופלים למטמון */
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const fetchPromise = fetch(req)
-        .then((res) => {
+    fetch(req)
+      .then((res) => {
+        try {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-          return res;
-        })
-        .catch(() => cached);
-      return cached || fetchPromise;
-    }),
+        } catch {
+          /* ignore */
+        }
+        return res;
+      })
+      .catch(() => caches.match(req)),
   );
 });
 

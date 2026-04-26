@@ -7,8 +7,9 @@
 מריצים פקודה אחת וזה מרים גם את האפליקציה וגם את שרת התזכורות:
 
 ```powershell
-cd C:\Users\ilani\idea-planner
+cd "c:\פרוייקטים\יומן משימות"
 npm install
+npm install --prefix server
 npm run dev
 ```
 

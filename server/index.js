@@ -44,7 +44,6 @@ async function loadDotEnv() {
 }
 
 await loadDotEnv();
-await ensureDir(DATA_DIR);
 
 const PORT = Number(env("PORT", "8787"));
 const VAPID_SUBJECT = env("VAPID_SUBJECT", "mailto:you@example.com");
@@ -58,6 +57,8 @@ async function ensureDir(p) {
     // ignore
   }
 }
+
+await ensureDir(DATA_DIR);
 
 async function getOrCreateVapidKeys() {
   const fs = await import("node:fs");
