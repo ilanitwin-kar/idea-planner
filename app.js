@@ -215,6 +215,7 @@ function loadAppMode() {
     if (
       v === "ideas" ||
       v === "daily-today" ||
+      v === "today-tasks" ||
       v === "daily-future" ||
       v === "daily-history" ||
       v === "daily-master"
@@ -252,8 +253,8 @@ let lastKnownCalendarDayKey = loadPersistedCalendarDay() ?? localDateKey();
 /** יום שמוצג במסך «היום שלי» (מחלקה / כפתורים) */
 let dailyBrowseDateKey = localDateKey();
 
-const DAILY_SWIPE_MIN_PX = 56;
-const DAILY_SWIPE_MAX_MS = 700;
+const DAILY_SWIPE_MIN_PX = 42;
+const DAILY_SWIPE_MAX_MS = 900;
 
 function rollIncompleteDailyTasksFromTo(fromKey, toKey) {
   if (!fromKey || !toKey || fromKey >= toKey) return;
@@ -562,6 +563,7 @@ function syncAppNavActive() {
   const pairs = [
     ["daily-today", "tnDailyToday"],
     ["daily-today", "bnDailyToday"],
+    ["today-tasks", "bnTodayTasks"],
     ["ideas", "tnIdeas"],
     ["ideas", "bnIdeas"],
     ["daily-future", "tnDailyFuture"],
@@ -578,6 +580,7 @@ function syncAppNavActive() {
 function updateAppViewsVisibility() {
   document.getElementById("viewIdeas")?.classList.toggle("hidden", appMode !== "ideas");
   document.getElementById("viewDailyToday")?.classList.toggle("hidden", appMode !== "daily-today");
+  document.getElementById("viewTodayTasks")?.classList.toggle("hidden", appMode !== "today-tasks");
   document.getElementById("viewDailyFuture")?.classList.toggle("hidden", appMode !== "daily-future");
   document.getElementById("viewDailyHistory")?.classList.toggle("hidden", appMode !== "daily-history");
   document.getElementById("viewDailyMaster")?.classList.toggle("hidden", appMode !== "daily-master");
@@ -642,6 +645,11 @@ function shiftDailyBrowse(deltaDays) {
     clearTimeout(shiftDailyBrowse._t);
     shiftDailyBrowse._t = setTimeout(() => swipeArea.classList.remove("daily-changed"), 320);
   }
+  try {
+    toast(formatHebrewDateLabel(dailyBrowseDateKey));
+  } catch {
+    /* ignore */
+  }
   render();
 }
 
@@ -696,6 +704,81 @@ function renderDailyHistoryPage() {
   const progEl = document.getElementById("dailyHistoryProgress");
   if (progEl) {
     progEl.textContent = n ? `${n} תתי־משימות בארכיון` : "";
+  }
+}
+
+function collectSubtasksForToday() {
+  const todayK = localDateKey();
+  /** @type {Map<string, { ideaTitle: string, taskTitle: string, subs: any[] }>} */
+  const byTask = new Map();
+  for (const idea of state.ideas) {
+    for (const task of idea.tasks ?? []) {
+      for (const sub of task.subtasks ?? []) {
+        const dk = subtaskLocalDateKey(sub.startsAt);
+        if (dk !== todayK) continue;
+        const tkey = `${idea.id}::${task.id}`;
+        if (!byTask.has(tkey))
+          byTask.set(tkey, { ideaTitle: idea.title || "ללא שם", taskTitle: task.title || "ללא שם", subs: [] });
+        byTask.get(tkey).subs.push(sub);
+      }
+    }
+  }
+  const tasks = [...byTask.values()];
+  tasks.sort((a, b) => a.taskTitle.localeCompare(b.taskTitle));
+  for (const t of tasks) t.subs = sortSubtasksByStart(t.subs);
+  return { todayK, tasks };
+}
+
+function renderTodayTasksPage() {
+  const todayK = localDateKey();
+  const progEl = document.getElementById("todayTasksProgress");
+
+  // Ideas subtasks scheduled today
+  const ideasRoot = document.getElementById("todayTasksIdeasRoot");
+  if (ideasRoot) {
+    ideasRoot.innerHTML = "";
+    const { tasks } = collectSubtasksForToday();
+    if (tasks.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty plan-empty";
+      empty.innerHTML = `<div class="empty-text">אין תתי־משימות מתוזמנות להיום מתוך הרעיונות.</div>`;
+      ideasRoot.appendChild(empty);
+    } else {
+      // one "date block" for today, grouped by task
+      const wrap = document.createElement("section");
+      wrap.className = "plan-date-block";
+      wrap.innerHTML = `
+        <div class="plan-date-heading">
+          <span class="plan-date-title">${escapeHtml(formatHebrewDateLabel(todayK))}</span>
+        </div>
+        <div class="plan-date-body"></div>
+      `;
+      const body = wrap.querySelector(".plan-date-body");
+      for (const task of tasks) {
+        const blk = document.createElement("div");
+        blk.className = "plan-task-block";
+        blk.innerHTML = `
+          <div class="plan-task-head">
+            <span class="plan-task-name">${escapeHtml(task.taskTitle)}</span>
+            <span class="plan-idea-pill">${escapeHtml(task.ideaTitle)}</span>
+          </div>
+          <div class="plan-subs">${task.subs.map((s) => renderSubtaskCheckboxRow(s)).join("")}</div>
+        `;
+        body.appendChild(blk);
+      }
+      ideasRoot.appendChild(wrap);
+    }
+  }
+
+  // Daily journal tasks for today
+  renderDayItemsList(document.getElementById("todayTasksDailyRoot"), todayK);
+
+  if (progEl) {
+    const ideaCount = collectSubtasksForToday().tasks.reduce((acc, t) => acc + (t.subs?.length ?? 0), 0);
+    const dayPr = dayProgress(dayJournal, todayK);
+    const dayCount = dayPr.total ?? 0;
+    const doneToday = dayPr.done ?? 0;
+    progEl.textContent = `מהרעיונות: ${ideaCount} • מהיום שלי: ${doneToday}/${dayCount} הושלמו`;
   }
 }
 
@@ -1451,7 +1534,8 @@ function renderTasks(idea) {
         startsAt: fromLocalInputToIso(startLocal),
         endsAt: fromLocalInputToIso(endLocal),
       });
-      task.uiOpen = true;
+      // אחרי הוספת תת־משימה: לקפל כדי לחזור לרשימה נקייה
+      task.uiOpen = false;
       persistAndRender();
     });
   }
@@ -1619,7 +1703,8 @@ function wireGlobalHandlers() {
     const title = els.taskTitleInput.value.trim();
     if (!title) return;
     idea.tasks = idea.tasks ?? [];
-    idea.tasks.unshift({ id: uid("task"), title, subtasks: [], uiOpen: true });
+    // ברירת מחדל: משימות מקופלות כדי לא להעמיס
+    idea.tasks.unshift({ id: uid("task"), title, subtasks: [], uiOpen: false });
     els.taskTitleInput.value = "";
     persistAndRender();
   });
@@ -1646,6 +1731,7 @@ function wireGlobalHandlers() {
   bindAppMode("tnDailyFuture", "daily-future");
   bindAppMode("tnDailyHistory", "daily-history");
   bindAppMode("bnDailyToday", "daily-today");
+  bindAppMode("bnTodayTasks", "today-tasks");
   bindAppMode("bnIdeas", "ideas");
   bindAppMode("topNavFuture", "daily-future");
   bindAppMode("topNavHistory", "daily-history");
@@ -1905,7 +1991,9 @@ function wireGlobalHandlers() {
         moved = false;
         skipSwipeGesture = false;
         if (e.touches.length !== 1) return;
-        const el = e.target?.closest?.("button, input, textarea, a, select, label");
+        // לא חוסמים סוויפ על כל ה־labelים כדי שלא ירגיש “לא עובד”.
+        // חוסמים רק כשמתחילים ממש על רכיב קלט/כפתור/לינק.
+        const el = e.target?.closest?.("button, input, textarea, a, select");
         if (el) skipSwipeGesture = true;
         sx = e.touches[0].clientX;
         sy = e.touches[0].clientY;
@@ -1922,11 +2010,25 @@ function wireGlobalHandlers() {
         const y = e.touches[0].clientY;
         const dx = x - sx;
         const dy = y - sy;
-        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved = true;
-        // If user is clearly scrolling vertically, cancel swipe
-        if (Math.abs(dy) > Math.abs(dx) * 1.4) skipSwipeGesture = true;
+        if (Math.abs(dx) > 6 || Math.abs(dy) > 6) moved = true;
+
+        // אם זה נראה כמו גלילה אנכית — מבטלים; אם זה נראה אופקי — נועלים לסוויפ.
+        const absX = Math.abs(dx);
+        const absY = Math.abs(dy);
+        if (absY > absX * 1.25) {
+          skipSwipeGesture = true;
+          return;
+        }
+        if (absX > absY * 1.05) {
+          // כשזה אופקי ברור, מונעים מהדפדפן “למשוך” גלילה
+          try {
+            e.preventDefault();
+          } catch {
+            /* ignore */
+          }
+        }
       },
-      { passive: true },
+      { passive: false },
     );
     swipeArea.addEventListener(
       "touchend",
@@ -1996,6 +2098,7 @@ function render() {
   }
 
   if (appMode === "daily-today") renderDailyTodayPage();
+  if (appMode === "today-tasks") renderTodayTasksPage();
   if (appMode === "daily-future") renderDailyFuturePage();
   if (appMode === "daily-history") renderDailyHistoryPage();
   if (appMode === "daily-master") renderDailyMasterPage();

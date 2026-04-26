@@ -297,6 +297,27 @@
       </div>
     </section>
 
+    <section id="viewTodayTasks" class="daily-page hidden" aria-label="משימות היום">
+      <div class="daily-inner">
+        <div class="panel-header daily-header">
+          <div class="panel-title">משימות היום</div>
+          <div class="panel-hint">כל מה שמתוזמן להיום (מהרעיונות) + משימות “היום שלי”.</div>
+        </div>
+        <div class="today-tasks-root">
+          <div class="today-tasks-section">
+            <div class="today-tasks-title">מהרעיונות</div>
+            <div id="todayTasksIdeasRoot" class="plan-aggregate-root"></div>
+          </div>
+          <div class="today-tasks-divider"></div>
+          <div class="today-tasks-section">
+            <div class="today-tasks-title">מהיום שלי</div>
+            <div id="todayTasksDailyRoot" class="list daily-list" role="list"></div>
+          </div>
+        </div>
+        <div id="todayTasksProgress" class="daily-progress"></div>
+      </div>
+    </section>
+
     <section id="viewDailyFuture" class="daily-page hidden" aria-label="עתידי — מתוך הרעיונות">
       <div class="daily-inner">
         <div class="panel-header daily-header">
@@ -335,6 +356,7 @@
 
     <nav class="bottom-nav" aria-label="תפריט תחתון">
       <button id="bnDailyToday" class="bn-item active" type="button">היום שלי</button>
+      <button id="bnTodayTasks" class="bn-item" type="button">משימות היום</button>
       <button id="bnIdeas" class="bn-item" type="button">רעיונות</button>
     </nav>
 

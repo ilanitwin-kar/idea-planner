@@ -485,6 +485,25 @@ body{
   background: var(--surface-2);
 }
 
+/* מסך: משימות היום */
+.today-tasks-root{
+  padding: 12px 0 0;
+}
+.today-tasks-section{
+  padding: 0 0 8px;
+}
+.today-tasks-title{
+  padding: 10px 14px 8px;
+  font-weight: 800;
+  color: var(--heading);
+  font-size: 1.05rem;
+}
+.today-tasks-divider{
+  height: 1px;
+  background: var(--border-soft);
+  margin: 6px 12px 10px;
+}
+
 .plan-aggregate-root{
   padding: 12px 0 8px;
   min-height: 120px;
