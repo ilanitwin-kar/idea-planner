@@ -191,16 +191,6 @@ body{
   background: var(--surface-2);
   border-bottom: 1px solid var(--border-soft);
 }
-.top-menu-list-meta{
-  margin: 0;
-  padding: 6px 12px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--accent-pink);
-  text-align: center;
-  border-bottom: 1px solid var(--border-soft);
-  background: #ffffff;
-}
 .top-menu-list-item{
   display: flex;
   align-items: center;
@@ -944,15 +934,6 @@ body{
 }
 .btn-ghost:hover{ background: var(--accent-pink-soft); }
 
-.auth-status{
-  color: var(--accent-pink);
-  font-size: 0.9rem;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border-soft);
-  background: var(--surface-2);
-}
 
 .toast{
   position: fixed;
@@ -1053,6 +1034,79 @@ body{
   gap: 8px;
 }
 
+/* טאב: רשימת תתי משימות (מקונן לפי משימה) */
+.tasks-group{
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: var(--shadow-soft);
+}
+.tasks-group-head{
+  padding: 12px 12px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+.tasks-group-title{
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: var(--heading);
+  line-height: 1.25;
+}
+.tasks-group-meta{
+  margin-top: 6px;
+  color: var(--muted2);
+  font-size: 0.92rem;
+}
+.tasks-sub-list{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+.tasks-sub-row{
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 10px 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 10px;
+  align-items: start;
+}
+.tasks-sub-main{
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+}
+.tasks-sub-title{
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.tasks-sub-meta{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tasks-sub-actions{
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: start;
+}
+@media (max-width: 520px){
+  .tasks-sub-row{
+    grid-template-columns: 1fr;
+  }
+  .tasks-sub-actions{
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: end;
+  }
+}
+
 .row{
   display:flex;
   align-items:flex-start;
@@ -1097,6 +1151,24 @@ body{
 .row-actions{
   display:flex;
   gap: 6px;
+}
+
+/* נייד: התוכן (כולל תתי־משימות) יורד לשורה מלאה */
+@media (max-width: 520px){
+  .row{
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .row > .check{
+    margin-top: 4px;
+  }
+  .row-actions{
+    margin-inline-start: auto;
+  }
+  .row-main{
+    flex: 1 1 100%;
+    min-width: 0;
+  }
 }
 .icon-btn{
   width: 34px; height: 34px;

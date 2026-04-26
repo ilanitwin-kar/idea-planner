@@ -188,14 +188,6 @@ function debounce(ms, fn) {
 }
 
 let state = loadState();
-let cloud = null;
-let pushCloudDebounced = null;
-let currentUserUid = null;
-let pushServer = {
-  baseUrl: "http://localhost:8787",
-  vapidPublicKey: null,
-  subscribed: false,
-};
 
 const SETTINGS_KEY = "idea-planner:settings:v1";
 let settings = loadSettings();
@@ -204,16 +196,11 @@ function loadSettings() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     const x = raw ? JSON.parse(raw) : null;
-    const defaultPushUrl = window.location.port?.startsWith("517") ? "http://localhost:8787" : window.location.origin;
     return {
-      pushServerUrl: typeof x?.pushServerUrl === "string" && x.pushServerUrl ? x.pushServerUrl : defaultPushUrl,
-      remindAtTime: x?.remindAtTime !== false,
-      remindBefore30: x?.remindBefore30 !== false,
       defaultCalMode: x?.defaultCalMode === "day" || x?.defaultCalMode === "month" ? x.defaultCalMode : "week",
     };
   } catch {
-    const defaultPushUrl = window.location.port?.startsWith("517") ? "http://localhost:8787" : window.location.origin;
-    return { pushServerUrl: defaultPushUrl, remindAtTime: true, remindBefore30: true, defaultCalMode: "week" };
+    return { defaultCalMode: "week" };
   }
 }
 function saveSettings() {
@@ -856,16 +843,6 @@ const els = {
   hsTasks: document.getElementById("hsTasks"),
   hsToday: document.getElementById("hsToday"),
   hsNext: document.getElementById("hsNext"),
-
-  authStatus: document.getElementById("authStatus"),
-  authBtn: document.getElementById("authBtn"),
-  authDialog: document.getElementById("authDialog"),
-  authEmail: document.getElementById("authEmail"),
-  authPassword: document.getElementById("authPassword"),
-  authLogin: document.getElementById("authLogin"),
-  authSignup: document.getElementById("authSignup"),
-  authLogout: document.getElementById("authLogout"),
-  authHint: document.getElementById("authHint"),
 };
 
 let ui = {
@@ -909,98 +886,6 @@ function toast(msg) {
   toast._t = setTimeout(() => el.classList.add("hidden"), 2600);
 }
 
-function urlBase64ToUint8Array(base64String) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
-  return outputArray;
-}
-
-async function ensurePushSubscription() {
-  if (!("serviceWorker" in navigator)) throw new Error("אין Service Worker בדפדפן הזה.");
-  if (!("PushManager" in window)) throw new Error("הדפדפן לא תומך Push.");
-  if (Notification.permission !== "granted") throw new Error("צריך לאשר התראות קודם.");
-
-  pushServer.baseUrl = settings.pushServerUrl;
-  if (!pushServer.vapidPublicKey) {
-    const res = await fetch(`${pushServer.baseUrl}/vapidPublicKey`);
-    if (!res.ok) {
-      throw new Error(
-        "השרת לא סיפק מפתח VAPID. בדקי שבהגדרות יש כתובת שרת נכונה, ושבקובץ server\\.env מוגדרים VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY.",
-      );
-    }
-    const json = await res.json();
-    pushServer.vapidPublicKey = json.publicKey;
-  }
-
-  const reg = await navigator.serviceWorker.ready;
-  let sub = await reg.pushManager.getSubscription();
-  if (!sub) {
-    sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(pushServer.vapidPublicKey),
-    });
-  }
-
-  const resp = await fetch(`${pushServer.baseUrl}/subscribe`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ subscription: sub, userKey: currentUserUid ?? "local" }),
-  });
-  if (!resp.ok) throw new Error("הרשמה לשרת נכשלה.");
-  pushServer.subscribed = true;
-  return sub;
-}
-
-async function upsertReminderForSubtask(subtaskId) {
-  const found = findSubtaskById(subtaskId);
-  if (!found) return;
-  const { idea, task, sub } = found;
-  const start = isoToDate(sub.startsAt);
-  if (!start) return;
-  if (sub.done) {
-    await fetch(`${pushServer.baseUrl}/reminders/delete`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subtaskId, userKey: currentUserUid ?? "local" }),
-    }).catch(() => {});
-    return;
-  }
-
-  const reminders = [];
-  const base = {
-    title: `תזכורת: ${sub.title || "תת־משימה"}`,
-    body: `${idea.title || "רעיון"} • ${task.title || "משימה"}`,
-    url: "/",
-  };
-  const at = start.getTime();
-  const before30 = at - 30 * 60 * 1000;
-
-  if (settings.remindBefore30 && before30 > Date.now() - 60_000) {
-    reminders.push({ key: "before30", ...base, fireAt: before30 });
-  }
-  if (settings.remindAtTime && at > Date.now() - 60_000) {
-    reminders.push({ key: "at", ...base, fireAt: at });
-  }
-  if (reminders.length === 0) {
-    await fetch(`${pushServer.baseUrl}/reminders/delete`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subtaskId, userKey: currentUserUid ?? "local" }),
-    }).catch(() => {});
-    return;
-  }
-
-  const payload = { subtaskId, reminders, userKey: currentUserUid ?? "local" };
-  await fetch(`${pushServer.baseUrl}/reminders/upsert`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
 function findSubtaskById(subtaskId) {
   for (const idea of state.ideas) {
     for (const task of idea.tasks ?? []) {
@@ -1031,7 +916,6 @@ function ensureSelection() {
 function persistAndRender() {
   ensureSelection();
   saveState(state);
-  if (pushCloudDebounced) pushCloudDebounced();
   render();
 }
 
@@ -1259,7 +1143,6 @@ function renderCalendar() {
       info.sub.startsAt = shiftIsoToDateKeepingTime(oldStart, targetDate);
       if (oldEnd) info.sub.endsAt = shiftIsoToDateKeepingTime(oldEnd, targetDate);
       persistAndRender();
-      if (pushServer.subscribed) upsertReminderForSubtask(info.sub.id).catch(() => {});
       toast("עודכן בלוח: התת־משימה הוזזה ליום אחר.");
     });
 
@@ -1349,36 +1232,67 @@ function renderTasksAll() {
     ? items.filter((x) => (x.subtaskTitle + " " + x.taskTitle + " " + x.ideaTitle).toLowerCase().includes(q))
     : items;
 
+  /** @type {Map<string, { ideaTitle: string, taskTitle: string, subs: any[] }>} */
+  const groups = new Map();
+  for (const it of filtered) {
+    const key = `${it.ideaId}::${it.taskId}`;
+    if (!groups.has(key)) groups.set(key, { ideaTitle: it.ideaTitle, taskTitle: it.taskTitle, subs: [] });
+    groups.get(key).subs.push(it);
+  }
+
+  const grouped = [...groups.values()].sort((a, b) => {
+    const aT = a.taskTitle.localeCompare(b.taskTitle);
+    if (aT) return aT;
+    return a.ideaTitle.localeCompare(b.ideaTitle);
+  });
+
   els.tasksListAll.innerHTML = "";
-  if (filtered.length === 0) {
+  if (grouped.length === 0) {
     const div = document.createElement("div");
     div.className = "empty";
-    div.innerHTML = `<div class="empty-text">אין תתי־משימות להצגה.</div>`;
+    div.innerHTML = `<div class="empty-text">אין תתי־משימות עם תאריך/שעה להצגה.</div>`;
     els.tasksListAll.appendChild(div);
     return;
   }
 
-  for (const it of filtered) {
-    const row = document.createElement("div");
-    row.className = "row";
-    const d = new Date(it.startsAt);
-    const dateText = d.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit" });
-    const timeText = d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
-    row.innerHTML = `
-      <input class="check" type="checkbox" ${it.done ? "checked" : ""} data-action="toggle-subtask-from-calendar" data-subtask-id="${it.subtaskId}" aria-label="סימון תת־משימה" />
-      <div class="row-main">
-        <div class="row-title">${escapeHtml(it.subtaskTitle)}</div>
-        <div class="row-meta">
-          <span class="pill">${escapeHtml(dateText)} ${escapeHtml(timeText)}</span>
-          <span class="pill">${escapeHtml(it.ideaTitle)}</span>
-          <span class="pill">${escapeHtml(it.taskTitle)}</span>
-        </div>
-      </div>
-      <div class="row-actions">
-        <button class="icon-btn" type="button" data-action="open-subtask" data-subtask-id="${it.subtaskId}" title="עריכה">✎</button>
-      </div>
+  for (const g of grouped) {
+    const section = document.createElement("section");
+    section.className = "tasks-group";
+
+    const head = document.createElement("div");
+    head.className = "tasks-group-head";
+    head.innerHTML = `
+      <div class="tasks-group-title">${escapeHtml(g.taskTitle)}</div>
+      <div class="tasks-group-meta">רעיון: <strong>${escapeHtml(g.ideaTitle)}</strong></div>
     `;
-    els.tasksListAll.appendChild(row);
+    section.appendChild(head);
+
+    const list = document.createElement("div");
+    list.className = "tasks-sub-list";
+    const subsSorted = [...g.subs].sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+    for (const it of subsSorted) {
+      const row = document.createElement("div");
+      row.className = "tasks-sub-row";
+      const d = new Date(it.startsAt);
+      const dateText = d.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit" });
+      const timeText = d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+      row.innerHTML = `
+        <label class="tasks-sub-main">
+          <input class="check" type="checkbox" ${it.done ? "checked" : ""} data-action="toggle-subtask-from-calendar" data-subtask-id="${escapeHtml(it.subtaskId)}" aria-label="סימון תת־משימה" />
+          <span class="tasks-sub-title">${escapeHtml(it.subtaskTitle)}</span>
+        </label>
+        <div class="tasks-sub-meta">
+          <span class="pill">תאריך: ${escapeHtml(dateText)}</span>
+          <span class="pill">שעה: ${escapeHtml(timeText)}</span>
+        </div>
+        <div class="tasks-sub-actions">
+          <button class="icon-btn" type="button" data-action="open-subtask" data-subtask-id="${escapeHtml(it.subtaskId)}" title="עריכה">✎</button>
+        </div>
+      `;
+      list.appendChild(row);
+    }
+    section.appendChild(list);
+    els.tasksListAll.appendChild(section);
   }
 }
 
@@ -1444,7 +1358,6 @@ function openEventDialog(subtaskId) {
     sub.endsAt = fromLocalInputToIso(endEl.value);
     sub.done = !!doneEl.checked;
     persistAndRender();
-    if (pushServer.subscribed) upsertReminderForSubtask(subtaskId).catch(() => {});
     dlg.close();
     toast("עודכן מהלוח.");
   };
@@ -1522,7 +1435,6 @@ function renderTasks(idea) {
       });
       task.uiOpen = true;
       persistAndRender();
-      if (pushServer.subscribed) upsertReminderForSubtask(task.subtasks[task.subtasks.length - 1].id).catch(() => {});
     });
   }
 }
@@ -1558,7 +1470,6 @@ function renderSubtasks(idea, task, subtasksListEl) {
     if (!id) return;
     task.subtasks = (task.subtasks ?? []).filter((s) => s.id !== id);
     persistAndRender();
-    if (pushServer.subscribed) fetch(`${pushServer.baseUrl}/reminders/delete`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subtaskId: id, userKey: currentUserUid ?? "local" }) }).catch(() => {});
   });
 
   subtasksListEl.addEventListener("change", (e) => {
@@ -1574,21 +1485,18 @@ function renderSubtasks(idea, task, subtasksListEl) {
     if (action === "toggle-subtask") {
       sub.done = el.checked;
       persistAndRender();
-      if (pushServer.subscribed) upsertReminderForSubtask(id).catch(() => {});
       return;
     }
 
     if (action === "set-subtask-start") {
       sub.startsAt = fromLocalInputToIso(el.value);
       persistAndRender();
-      if (pushServer.subscribed) upsertReminderForSubtask(id).catch(() => {});
       return;
     }
 
     if (action === "set-subtask-end") {
       sub.endsAt = fromLocalInputToIso(el.value);
       persistAndRender();
-      if (pushServer.subscribed) upsertReminderForSubtask(id).catch(() => {});
     }
   });
 }
@@ -1633,103 +1541,25 @@ function wireGlobalHandlers() {
 
   const settingsBtn = document.getElementById("settingsBtn");
   const settingsDialog = document.getElementById("settingsDialog");
-  const setBefore30 = document.getElementById("setRemindBefore30");
-  const setAtTime = document.getElementById("setRemindAtTime");
-  const setPushUrl = document.getElementById("setPushUrl");
   const setDefaultCalMode = document.getElementById("setDefaultCalMode");
   const settingsSave = document.getElementById("settingsSave");
 
-  if (settingsBtn && settingsDialog && setBefore30 && setAtTime && setPushUrl && setDefaultCalMode && settingsSave) {
+  if (settingsBtn && settingsDialog && setDefaultCalMode && settingsSave) {
     settingsBtn.addEventListener("click", () => {
-      setBefore30.checked = !!settings.remindBefore30;
-      setAtTime.checked = !!settings.remindAtTime;
-      setPushUrl.value = settings.pushServerUrl;
       setDefaultCalMode.value = settings.defaultCalMode;
       settingsDialog.showModal();
     });
 
-    settingsSave.addEventListener("click", async () => {
-      settings.remindBefore30 = !!setBefore30.checked;
-      settings.remindAtTime = !!setAtTime.checked;
-      settings.pushServerUrl = String(setPushUrl.value ?? "").trim() || "http://localhost:8787";
+    settingsSave.addEventListener("click", () => {
       settings.defaultCalMode = String(setDefaultCalMode.value ?? "week");
       saveSettings();
-
-      pushServer.baseUrl = settings.pushServerUrl;
-      pushServer.vapidPublicKey = null;
-      pushServer.subscribed = false;
       ui.calMode = settings.defaultCalMode;
 
       settingsDialog.close();
       toast("ההגדרות נשמרו.");
-
-      // If already granted, re-subscribe to the new server URL
-      if (Notification.permission === "granted") {
-        try {
-          await ensurePushSubscription();
-          toast("מחובר לשרת התזכורות לפי ההגדרות.");
-        } catch {
-          // ignore
-        }
-      }
       persistAndRender();
     });
   }
-
-  const notifyBtn = document.getElementById("notifyBtn");
-  if (notifyBtn) {
-    notifyBtn.addEventListener("click", async () => {
-      try {
-        if (!("Notification" in window)) throw new Error("הדפדפן לא תומך בהתראות.");
-        const res = await Notification.requestPermission();
-        if (res !== "granted") {
-          toast("התראות לא הופעלו (לא אושר).");
-          return;
-        }
-        await ensurePushSubscription();
-        toast("התראות הופעלו + נרשמת לתזכורות אמיתיות.");
-      } catch (e) {
-        toast(String(e?.message ?? e));
-      }
-    });
-  }
-
-  els.authBtn.addEventListener("click", () => {
-    els.authHint.textContent = "";
-    els.authDialog.showModal();
-  });
-
-  const authError = (err) => {
-    els.authHint.textContent = String(err?.message ?? err ?? "שגיאה");
-  };
-
-  els.authLogin.addEventListener("click", async () => {
-    try {
-      if (!cloud) throw new Error("סנכרון לא מאותחל");
-      await cloud.login(String(els.authEmail.value ?? "").trim(), String(els.authPassword.value ?? "").trim());
-      els.authHint.textContent = "התחברת. הסנכרון פעיל.";
-    } catch (e) {
-      authError(e);
-    }
-  });
-  els.authSignup.addEventListener("click", async () => {
-    try {
-      if (!cloud) throw new Error("סנכרון לא מאותחל");
-      await cloud.signup(String(els.authEmail.value ?? "").trim(), String(els.authPassword.value ?? "").trim());
-      els.authHint.textContent = "נרשמת והתחברת. הסנכרון פעיל.";
-    } catch (e) {
-      authError(e);
-    }
-  });
-  els.authLogout.addEventListener("click", async () => {
-    try {
-      if (!cloud) throw new Error("סנכרון לא מאותחל");
-      await cloud.logout();
-      els.authHint.textContent = "התנתקת.";
-    } catch (e) {
-      authError(e);
-    }
-  });
 
   els.resetBtn.addEventListener("click", () => {
     const ok = confirm("למחוק את כל הנתונים? (רעיונות + יומן יומי — איפוס מלא)");
@@ -2023,7 +1853,6 @@ function wireGlobalHandlers() {
       if (!found) return;
       found.sub.done = el.checked;
       persistAndRender();
-      if (pushServer.subscribed) upsertReminderForSubtask(subId).catch(() => {});
     }
   });
 
@@ -2095,8 +1924,9 @@ function wireGlobalHandlers() {
         const dy = y - sy;
         if (Math.abs(dx) < DAILY_SWIPE_MIN_PX) return;
         if (Math.abs(dx) < Math.abs(dy) * 1.2) return;
-        if (dx < 0) shiftDailyBrowse(1);
-        else shiftDailyBrowse(-1);
+        // כיוון סוויפ: ימינה = יום אחרי, שמאלה = יום לפני
+        if (dx < 0) shiftDailyBrowse(-1);
+        else shiftDailyBrowse(1);
       },
       { passive: true },
     );
@@ -2165,49 +1995,5 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") render();
 });
 
-async function bootCloud() {
-  try {
-    const { initCloudSync } = await import("./cloud-sync.js");
-    cloud = await initCloudSync({
-      onRemoteState: (remoteState) => {
-        // Remote is source of truth after login (last-write-wins at doc level)
-        if (!remoteState || typeof remoteState !== "object") return;
-        state = remoteState;
-        persistAndRender();
-      },
-      onStatus: ({ mode, userEmail, userUid, enabled, error }) => {
-        if (!enabled) {
-          els.authStatus.textContent = "מצב: מקומי";
-          els.authBtn.textContent = "התחברות";
-          if (error) els.authHint.textContent = error;
-          return;
-        }
-        if (mode === "cloud") {
-          currentUserUid = userUid ?? null;
-          els.authStatus.textContent = `מסונכרן: ${userEmail ?? "מחובר"}`;
-          els.authBtn.textContent = "חשבון";
-        } else {
-          currentUserUid = null;
-          els.authStatus.textContent = "מצב: מקומי";
-          els.authBtn.textContent = "התחברות";
-          if (error) els.authHint.textContent = error;
-        }
-      },
-    });
-
-    pushCloudDebounced = debounce(CLOUD_DEBOUNCE_MS, async () => {
-      try {
-        await cloud?.pushState?.(state);
-      } catch (e) {
-        // Don't break UX; show hint if dialog is open
-        if (els.authDialog?.open) els.authHint.textContent = String(e?.message ?? e);
-      }
-    });
-  } catch (e) {
-    els.authStatus.textContent = "מצב: מקומי";
-  }
-}
-
-bootCloud();
 persistAndRender();
 

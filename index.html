@@ -43,10 +43,6 @@
             <button class="top-menu-close" type="button" aria-label="סגירה">✕</button>
           </div>
           <nav class="top-menu-list" aria-label="פעולות">
-            <div class="top-menu-list-header">חשבון</div>
-            <div id="authStatus" class="top-menu-list-meta" role="status">מצב: מקומי</div>
-            <button id="authBtn" class="top-menu-list-item" type="button">התחברות</button>
-
             <div class="top-menu-list-header">יומן</div>
             <div class="top-menu-list-pair" role="group" aria-label="עתידי ועבר">
               <button id="topNavFuture" class="top-menu-list-item top-menu-list-item--half journal-top-btn" type="button">עתידי</button>
@@ -58,7 +54,6 @@
 
             <div class="top-menu-list-header">אפליקציה</div>
             <button id="settingsBtn" class="top-menu-list-item" type="button">הגדרות</button>
-            <button id="notifyBtn" class="top-menu-list-item" type="button" title="הפעלת התראות לתזכורות">התראות</button>
             <button id="resetBtn" class="top-menu-list-item top-menu-list-item--danger" type="button" title="איפוס נתונים (מוחק הכל)">איפוס נתונים</button>
           </nav>
         </div>
@@ -66,26 +61,6 @@
     </div>
 
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-
-    <dialog id="authDialog" class="dialog">
-      <form method="dialog" class="dialog-inner" id="authForm">
-        <div class="dialog-title">התחברות וסנכרון בין מכשירים</div>
-        <div class="dialog-text">
-          כדי לאפשר סנכרון, צריך להגדיר פרטי Firebase בפרויקט. אם זה לא הוגדר עדיין, האפליקציה תעבוד במצב מקומי בלבד.
-        </div>
-        <div class="dialog-grid">
-          <input id="authEmail" class="input" type="email" placeholder="אימייל" autocomplete="email" />
-          <input id="authPassword" class="input" type="password" placeholder="סיסמה" autocomplete="current-password" />
-        </div>
-        <div class="dialog-actions">
-          <button id="authLogin" class="btn" type="button">התחברות</button>
-          <button id="authSignup" class="btn btn-ghost" type="button">הרשמה</button>
-          <button id="authLogout" class="btn btn-ghost" type="button">התנתקות</button>
-          <button class="btn btn-ghost" value="cancel" type="submit">סגירה</button>
-        </div>
-        <div id="authHint" class="dialog-hint"></div>
-      </form>
-    </dialog>
 
     <dialog id="eventDialog" class="dialog">
       <form method="dialog" class="dialog-inner" id="eventForm">
@@ -110,14 +85,7 @@
     <dialog id="settingsDialog" class="dialog">
       <form method="dialog" class="dialog-inner">
         <div class="dialog-title">הגדרות</div>
-        <div class="dialog-text">שליטה בתזכורות ותצוגת לוח השנה.</div>
-        <div class="section">
-          <div class="section-title">תזכורות</div>
-          <label class="checkline"><input id="setRemindBefore30" type="checkbox" /> תזכורת 30 דקות לפני</label>
-          <label class="checkline"><input id="setRemindAtTime" type="checkbox" /> תזכורת בזמן ההתחלה</label>
-          <div class="dialog-text" style="margin-top:8px">שרת תזכורות (Push):</div>
-          <input id="setPushUrl" class="input" type="text" placeholder="http://localhost:8787" />
-        </div>
+        <div class="dialog-text">תצוגת לוח השנה.</div>
         <div class="section">
           <div class="section-title">לוח שנה</div>
           <label class="checkline">תצוגת ברירת מחדל:
@@ -211,7 +179,7 @@
         <div class="tabs" role="tablist" aria-label="ניווט">
           <button id="tabIdea" class="tab active" type="button" role="tab" aria-selected="true">רעיון</button>
           <button id="tabCalendar" class="tab" type="button" role="tab" aria-selected="false">לוח שנה</button>
-          <button id="tabTasks" class="tab" type="button" role="tab" aria-selected="false">משימות</button>
+          <button id="tabTasks" class="tab" type="button" role="tab" aria-selected="false">רשימת תתי משימות</button>
         </div>
 
         <div id="emptyState" class="empty">
@@ -293,10 +261,10 @@
           <div id="calendarGrid" class="calendar-grid"></div>
         </div>
 
-        <div id="tasksView" class="hidden" role="tabpanel" aria-label="משימות">
+        <div id="tasksView" class="hidden" role="tabpanel" aria-label="רשימת תתי משימות">
           <div class="panel-header">
-            <div class="panel-title">משימות</div>
-            <div class="panel-hint">רשימה מרוכזת של תתי־משימות מכל הרעיונות.</div>
+            <div class="panel-title">רשימת תתי משימות</div>
+            <div class="panel-hint">כאן רואים לפי משימה את כל תתי־המשימות שלה (עם תאריך/שעה) ומסמנים ✓ כשבוצע.</div>
           </div>
           <div class="section">
             <input id="tasksSearch" class="input" type="text" placeholder="חיפוש…" />
