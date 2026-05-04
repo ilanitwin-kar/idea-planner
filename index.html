@@ -51,8 +51,11 @@
 
             <div class="top-menu-list-header">היום שלי</div>
             <button id="topNavDailyMaster" class="top-menu-list-item" type="button">משימות יומיומיות</button>
+            <button id="topNavTiming" class="top-menu-list-item" type="button">תזמון</button>
+            <button id="topNavPantry" class="top-menu-list-item" type="button">מלאי בית</button>
 
             <div class="top-menu-list-header">אפליקציה</div>
+            <button id="exportPdfBtn" class="top-menu-list-item" type="button" title="כל הרעיונות והיומן היומי">ייצוא PDF (מלא)</button>
             <button id="settingsBtn" class="top-menu-list-item" type="button">הגדרות</button>
             <button id="resetBtn" class="top-menu-list-item top-menu-list-item--danger" type="button" title="איפוס נתונים (מוחק הכל)">איפוס נתונים</button>
           </nav>
@@ -126,6 +129,47 @@
         <input id="dailyEditInput" class="input daily-edit-input" type="text" maxlength="200" autocomplete="off" />
         <div class="dialog-actions">
           <button id="dailyEditSave" class="btn" type="button">שמירה</button>
+          <button class="btn btn-ghost" value="cancel" type="submit">ביטול</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="dailyTimerDialog" class="dialog">
+      <div class="dialog-inner">
+        <div class="dialog-title">טיימר משימה</div>
+        <div id="dailyTimerTaskLine" class="dialog-text"></div>
+        <div id="dailyTimerMeta" class="dialog-hint"></div>
+        <div id="dailyTimerClock" class="daily-timer-clock" aria-live="polite">0:00</div>
+        <div class="dialog-actions dialog-actions--wrap">
+          <button id="dailyTimerStart" type="button" class="btn">התחלה</button>
+          <button id="dailyTimerStop" type="button" class="btn">סיום ושמירה</button>
+          <button id="dailyTimerDiscard" type="button" class="btn btn-ghost">ביטול מדידה</button>
+          <button id="dailyTimerCloseBtn" type="button" class="btn btn-ghost">סגירה</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="pantryEditDialog" class="dialog">
+      <form method="dialog" class="dialog-inner" id="pantryEditForm">
+        <div class="dialog-title">עריכת פריט במלאי</div>
+        <label class="checkline">שם הפריט
+          <input id="pantryEditName" class="input" type="text" maxlength="120" autocomplete="off" />
+        </label>
+        <label class="checkline">מיקום
+          <select id="pantryEditLoc" class="select">
+            <option value="fridge">מקרר</option>
+            <option value="pantry">מזווה</option>
+            <option value="freezer">מקפיא</option>
+          </select>
+        </label>
+        <label class="checkline">כמות במלאי
+          <input id="pantryEditQty" class="input" type="number" min="0" step="any" inputmode="decimal" />
+        </label>
+        <label class="checkline">יחידת מידה
+          <input id="pantryEditUnit" class="input" type="text" maxlength="24" placeholder="יח׳ / ליטר / חבילה…" />
+        </label>
+        <div class="dialog-actions">
+          <button id="pantryEditSave" type="button" class="btn">שמירה</button>
           <button class="btn btn-ghost" value="cancel" type="submit">ביטול</button>
         </div>
       </form>
@@ -351,6 +395,50 @@
         </div>
         <div id="dailyMasterList" class="daily-master-list" role="list"></div>
         <div id="dailyMasterProgress" class="daily-progress"></div>
+      </div>
+    </section>
+
+    <section id="viewDailyTiming" class="daily-page hidden" aria-label="תזמון">
+      <div class="daily-inner">
+        <div class="panel-header daily-header">
+          <div class="panel-title">תזמון</div>
+          <div class="panel-hint">מדידות ממשימות «היום שלי» — כמה זמן כל משימה לקחה בפועל (שימושי לתכנון בהמשך).</div>
+        </div>
+        <div id="dailyTimingList" class="timing-list" role="list"></div>
+      </div>
+    </section>
+
+    <section id="viewPantry" class="daily-page hidden" aria-label="מלאי בית">
+      <div class="daily-inner">
+        <div class="panel-header daily-header">
+          <div class="panel-title">מלאי בית</div>
+          <div class="panel-hint">רשימת מזון שיש בבית — «השתמשתי» מורידה יחידה מהמלאי (כמו אחרי פתיחה או שימוש). פריטים באפור אזלו — זה סימן לקנות בפעם הבאה.</div>
+        </div>
+        <div class="pantry-toolbar">
+          <div id="pantryFilterBar" class="pantry-filters" role="tablist" aria-label="סינון לפי מיקום"></div>
+          <details class="daily-kebab pantry-filter-kebab" id="pantryStockFilterMenu">
+            <summary class="daily-kebab-summary" aria-label="סינון לפי מלאי וכמות שנותרה">⋮</summary>
+            <div
+              id="pantryStockFilterMenuInner"
+              class="daily-kebab-menu pantry-stock-filter-menu"
+              role="menu"
+            ></div>
+          </details>
+        </div>
+        <div id="pantryFilterHint" class="pantry-filter-hint hidden" aria-live="polite"></div>
+        <form id="pantryAddForm" class="pantry-add-form" autocomplete="off">
+          <input id="pantryNewName" class="input" type="text" maxlength="120" placeholder="שם המוצר…" aria-label="שם המוצר" />
+          <select id="pantryNewLoc" class="select" aria-label="מיקום">
+            <option value="fridge">מקרר</option>
+            <option value="pantry">מזווה</option>
+            <option value="freezer">מקפיא</option>
+          </select>
+          <input id="pantryNewQty" class="input pantry-qty-input" type="number" min="0" step="any" value="1" inputmode="decimal" aria-label="כמות התחלתית" />
+          <input id="pantryNewUnit" class="input pantry-unit-input" type="text" maxlength="24" placeholder="יח׳" aria-label="יחידת מידה" />
+          <button class="btn" type="submit">הוספה</button>
+        </form>
+        <div id="pantryListRoot" class="pantry-list" role="list"></div>
+        <div id="pantrySummary" class="daily-progress"></div>
       </div>
     </section>
 

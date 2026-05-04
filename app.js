@@ -10,6 +10,25 @@ import {
   updateDayItemTitle,
   dayProgress,
 } from "./daily-journal.js";
+import {
+  TIMING_LOG_KEY,
+  loadTimingState,
+  startDayItemTimer,
+  stopDayItemTimer,
+  cancelActiveTimer,
+  timersMatch,
+} from "./daily-timing-log.js";
+import {
+  PANTRY_STORAGE_KEY,
+  PANTRY_LOCATIONS,
+  pantryLocationLabel,
+  loadPantry,
+  addPantryItem,
+  deletePantryItem,
+  updatePantryItem,
+  consumePantry,
+  restockPantry,
+} from "./pantry.js";
 
 const APP_DISPLAY_NAME = "מרכז הרעיונות של אילנית";
 
@@ -104,6 +123,14 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
+function formatPantryQty(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "0";
+  if (Math.abs(x - Math.round(x)) < 1e-9) return String(Math.round(x));
+  const s = x.toFixed(2).replace(/\.?0+$/, "");
+  return s;
+}
+
 function formatWhen(isoStart, isoEnd) {
   const s = isoToDate(isoStart);
   if (!s) return "";
@@ -146,6 +173,91 @@ function ideaToExportText(idea) {
     }
   }
   return lines.join("\n");
+}
+
+/** טקסט גיבוי מלא ל־PDF: כל הרעיונות + יומן יומי */
+function fullAppToExportPlainText(state, dayJournal) {
+  const parts = [];
+  parts.push(`נוצר: ${new Date().toLocaleString("he-IL")}`);
+  parts.push("");
+  parts.push("————————————————");
+  parts.push("רעיונות ומשימות");
+  parts.push("————————————————");
+  const ideas = state.ideas ?? [];
+  if (ideas.length === 0) {
+    parts.push("(אין רעיונות)");
+  } else {
+    for (const idea of ideas) {
+      parts.push("");
+      parts.push(ideaToExportText(idea));
+    }
+  }
+  parts.push("");
+  parts.push("————————————————");
+  parts.push("יומן יומי (היום שלי)");
+  parts.push("————————————————");
+  const keys = Object.keys(dayJournal?.days ?? {})
+    .filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k))
+    .sort();
+  if (keys.length === 0) {
+    parts.push("(אין רשומות)");
+  } else {
+    for (const dk of keys) {
+      const day = dayJournal.days[dk];
+      parts.push("");
+      parts.push(`תאריך ${dk}:`);
+      const items = day?.items ?? [];
+      if (!items.length) {
+        parts.push("  (ריק)");
+        continue;
+      }
+      for (const it of items) {
+        const mark = it.done ? "✓" : "☐";
+        const t = String(it.title ?? it.text ?? "").trim() || "ללא כותרת";
+        parts.push(`  ${mark} ${t}`);
+      }
+    }
+  }
+  parts.push("");
+  parts.push("————————————————");
+  parts.push("תזמון (מדידות)");
+  parts.push("————————————————");
+  const tEntries = timingState.entries ?? [];
+  if (tEntries.length === 0) {
+    parts.push("(אין מדידות)");
+  } else {
+    for (const e of tEntries) {
+      const st = new Date(e.startedAt).toLocaleString("he-IL");
+      const en = new Date(e.endedAt).toLocaleString("he-IL");
+      parts.push(
+        `- ${e.title} | יום ${e.dateKey} | ${st} → ${en} | ${e.durationMinutes} דק׳`,
+      );
+    }
+  }
+  parts.push("");
+  parts.push("————————————————");
+  parts.push("מלאי בית (מזון)");
+  parts.push("————————————————");
+  const pitems = pantryState.items ?? [];
+  if (pitems.length === 0) {
+    parts.push("(אין פריטים)");
+  } else {
+    const byLoc = [...pitems].sort((a, b) => {
+      const c = String(a.location).localeCompare(String(b.location), "he");
+      if (c !== 0) return c;
+      return a.name.localeCompare(b.name, "he");
+    });
+    for (const it of byLoc) {
+      const loc = pantryLocationLabel(it.location);
+      const q = formatPantryQty(it.quantity);
+      const u = it.unit || "יח׳";
+      const mark = it.quantity <= 0 ? "אזל" : "";
+      parts.push(
+        `- ${it.name} | ${loc} | ${q} ${u}${mark ? ` | ${mark}` : ""}`,
+      );
+    }
+  }
+  return parts.join("\n");
 }
 
 function openExportDialog() {
@@ -218,7 +330,9 @@ function loadAppMode() {
       v === "today-tasks" ||
       v === "daily-future" ||
       v === "daily-history" ||
-      v === "daily-master"
+      v === "daily-master" ||
+      v === "timing" ||
+      v === "pantry"
     )
       return v;
   } catch {
@@ -247,9 +361,38 @@ function persistLastKnownCalendarDay() {
   }
 }
 
+/**
+ * אם מפתח idea-planner:last-known-calendar-day חסר (ניקוי חלקי, דפדפן, עדכון),
+ * ברירת מחדל ל-localDateKey() גורמת לכך שלא ירוץ גלגול — והמשימות של אתמול נשארות על תאריך אתמול.
+ * כאן מסיקים נקודת התחלה מהיומן: היום הקודם הישן ביותר שמופיע לפני היום — כדי לשרשר גלגול עד היום.
+ */
+function inferLastKnownCalendarDayFromJournal(journal, todayKey) {
+  try {
+    const keys = Object.keys(journal?.days ?? {})
+      .filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k))
+      .sort();
+    const strictlyBefore = keys.filter((k) => k < todayKey);
+    if (strictlyBefore.length === 0) return todayKey;
+    return strictlyBefore[0];
+  } catch {
+    return todayKey;
+  }
+}
+
 let appMode = loadAppMode();
 let dayJournal = loadDayJournal();
-let lastKnownCalendarDayKey = loadPersistedCalendarDay() ?? localDateKey();
+let timingState = loadTimingState();
+let pantryState = loadPantry();
+/** סינון מלאי: `all` או מזהה מיקום (fridge / pantry / freezer) */
+let pantryLocFilter = "all";
+/** סינון מצב מלאי: all | in_stock | out | low */
+let pantryStockFilter = "all";
+/** רק פריטים עם כמות שנותרה ≤ N (null = ללא הגבלה) */
+let pantryMaxQtyCap = null;
+const PANTRY_LOW_THRESHOLD = 1;
+const _calendarTodayInit = localDateKey();
+let lastKnownCalendarDayKey =
+  loadPersistedCalendarDay() ?? inferLastKnownCalendarDayFromJournal(dayJournal, _calendarTodayInit);
 /** יום שמוצג במסך «היום שלי» (מחלקה / כפתורים) */
 let dailyBrowseDateKey = localDateKey();
 
@@ -571,6 +714,8 @@ function syncAppNavActive() {
     ["daily-history", "tnDailyHistory"],
     ["daily-history", "topNavHistory"],
     ["daily-master", "topNavDailyMaster"],
+    ["timing", "topNavTiming"],
+    ["pantry", "topNavPantry"],
   ];
   for (const [m, id] of pairs) {
     document.getElementById(id)?.classList.toggle("active", appMode === m);
@@ -584,6 +729,8 @@ function updateAppViewsVisibility() {
   document.getElementById("viewDailyFuture")?.classList.toggle("hidden", appMode !== "daily-future");
   document.getElementById("viewDailyHistory")?.classList.toggle("hidden", appMode !== "daily-history");
   document.getElementById("viewDailyMaster")?.classList.toggle("hidden", appMode !== "daily-master");
+  document.getElementById("viewDailyTiming")?.classList.toggle("hidden", appMode !== "timing");
+  document.getElementById("viewPantry")?.classList.toggle("hidden", appMode !== "pantry");
 }
 
 function dayItemLabel(it) {
@@ -602,6 +749,11 @@ function openDailyEditDialog(dateKey, itemId) {
   dlg.dataset.editItemId = itemId;
   dlg.showModal();
   queueMicrotask(() => input.focus());
+}
+
+function findDayJournalItem(dateKey, itemId) {
+  const day = dayJournal.days[dateKey];
+  return day?.items?.find((x) => x.id === itemId) ?? null;
 }
 
 function renderDayItemsList(container, dateKey) {
@@ -626,8 +778,14 @@ function renderDayItemsList(container, dateKey) {
         <span class="daily-item-text">${label}</span>
       </label>
       <div class="daily-item-actions">
-        <button type="button" class="btn-daily-edit" data-action="daily-edit" data-date-key="${dateKey}" data-item-id="${it.id}" aria-label="עריכה">עריכה</button>
-        <button type="button" class="btn-daily-del" data-action="daily-delete" data-date-key="${dateKey}" data-item-id="${it.id}" aria-label="מחיקה">×</button>
+        <details class="daily-kebab">
+          <summary class="daily-kebab-summary" aria-label="פעולות למשימה">⋮</summary>
+          <div class="daily-kebab-menu" role="menu">
+            <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-edit" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}">עריכה</button>
+            <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-timer" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}">טיימר</button>
+            <button type="button" class="daily-kebab-item daily-kebab-item--danger" role="menuitem" data-action="daily-delete" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}">מחיקה</button>
+          </div>
+        </details>
       </div>
     `;
     container.appendChild(row);
@@ -845,12 +1003,315 @@ function renderDailyMasterPage() {
         <span class="dm-title">${escapeHtml(label || "ללא טקסט")}</span>
       </label>
       <span class="dm-date">${escapeHtml(dateLabel)}</span>
+      <details class="daily-kebab dm-kebab">
+        <summary class="daily-kebab-summary" aria-label="פעולות למשימה">⋮</summary>
+        <div class="daily-kebab-menu" role="menu">
+          <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-edit" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}">עריכה</button>
+          <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-timer" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}">טיימר</button>
+          <button type="button" class="daily-kebab-item daily-kebab-item--danger" role="menuitem" data-action="daily-delete" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}">מחיקה</button>
+        </div>
+      </details>
     `;
     container.appendChild(row);
   }
 
   if (progEl) {
     progEl.textContent = `סה״כ ${total} • ${doneC} בוצעו • ${total - doneC} פתוחות`;
+  }
+}
+
+let dailyTimerTick = null;
+
+function clearDailyTimerTick() {
+  if (dailyTimerTick) {
+    clearInterval(dailyTimerTick);
+    dailyTimerTick = null;
+  }
+}
+
+function formatElapsedMs(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+function updateDailyTimerClock() {
+  const el = document.getElementById("dailyTimerClock");
+  if (!el) return;
+  const a = timingState.active;
+  if (!a?.startedAt) {
+    el.textContent = "0:00";
+    return;
+  }
+  const t0 = new Date(a.startedAt).getTime();
+  if (Number.isNaN(t0)) {
+    el.textContent = "0:00";
+    return;
+  }
+  el.textContent = formatElapsedMs(Date.now() - t0);
+}
+
+function syncDailyTimerDialogUI() {
+  const dlg = document.getElementById("dailyTimerDialog");
+  const taskLine = document.getElementById("dailyTimerTaskLine");
+  const meta = document.getElementById("dailyTimerMeta");
+  const btnStart = document.getElementById("dailyTimerStart");
+  const btnStop = document.getElementById("dailyTimerStop");
+  const btnDiscard = document.getElementById("dailyTimerDiscard");
+  if (!dlg || !taskLine || !meta || !btnStart || !btnStop || !btnDiscard) return;
+
+  const dk = dlg.dataset.targetDateKey;
+  const id = dlg.dataset.targetItemId;
+  const it = dk && id ? findDayJournalItem(dk, id) : null;
+  const label = dayItemLabel(it) || "משימה";
+
+  const active = timingState.active;
+  const same = timersMatch(timingState, dk, id);
+  const runningHere = !!(active && same);
+
+  taskLine.textContent = `משימה: ${label}`;
+
+  if (!active) {
+    meta.textContent =
+      "לחצי «התחלה» כשמתחילות לעבוד, ו«סיום ושמירה» כשסיימת — המשך יופיע במסך «תזמון».";
+  } else if (runningHere) {
+    const st = new Date(active.startedAt).toLocaleString("he-IL");
+    meta.textContent = `התחלה: ${st}`;
+  } else {
+    meta.textContent = `יש טיימר פעיל על «${active.title}». «סיום ושמירה» ישמור את המדידה שלו; אחר כך אפשר להפעיל כאן.`;
+  }
+
+  btnStart.disabled = !!active;
+  btnStop.disabled = !active;
+  btnDiscard.disabled = !active;
+
+  updateDailyTimerClock();
+}
+
+function startDailyTimerTick() {
+  clearDailyTimerTick();
+  dailyTimerTick = setInterval(updateDailyTimerClock, 250);
+}
+
+function openDailyTimerDialog(dateKey, itemId) {
+  const it = findDayJournalItem(dateKey, itemId);
+  if (!it) {
+    toast("המשימה לא נמצאה.");
+    return;
+  }
+  const dlg = document.getElementById("dailyTimerDialog");
+  if (!(dlg instanceof HTMLDialogElement)) return;
+  dlg.dataset.targetDateKey = dateKey;
+  dlg.dataset.targetItemId = itemId;
+  syncDailyTimerDialogUI();
+  startDailyTimerTick();
+  dlg.showModal();
+}
+
+function renderDailyTimingPage() {
+  const root = document.getElementById("dailyTimingList");
+  if (!root) return;
+  root.innerHTML = "";
+  const entries = timingState.entries ?? [];
+  if (entries.length === 0) {
+    const div = document.createElement("div");
+    div.className = "empty";
+    div.innerHTML =
+      '<div class="empty-text">עדיין אין מדידות. מ«היום שלי» או «משימות יומיומיות» לחצי על ⋮ ליד משימה ובחרי «טיימר».</div>';
+    root.appendChild(div);
+    return;
+  }
+  for (const e of entries) {
+    const st = new Date(e.startedAt).toLocaleString("he-IL");
+    const en = new Date(e.endedAt).toLocaleString("he-IL");
+    const art = document.createElement("article");
+    art.className = "timing-row";
+    art.setAttribute("role", "listitem");
+    art.innerHTML = `
+      <div class="timing-title">${escapeHtml(e.title)}</div>
+      <div class="timing-meta">יום במחברת: ${escapeHtml(e.dateKey)}</div>
+      <div class="timing-times">התחלה: ${escapeHtml(st)}<br/>סיום: ${escapeHtml(en)}</div>
+      <div class="timing-duration">משך: <strong>${escapeHtml(String(e.durationMinutes))}</strong> דק׳</div>
+    `;
+    root.appendChild(art);
+  }
+}
+
+function filterPantryItemsByStock(items) {
+  let list = items.filter((it) => pantryLocFilter === "all" || it.location === pantryLocFilter);
+  if (pantryStockFilter === "in_stock") list = list.filter((it) => it.quantity > 0);
+  else if (pantryStockFilter === "out") list = list.filter((it) => it.quantity <= 0);
+  else if (pantryStockFilter === "low") {
+    list = list.filter(
+      (it) => it.quantity > 0 && it.quantity <= PANTRY_LOW_THRESHOLD,
+    );
+  }
+  if (pantryMaxQtyCap != null && Number.isFinite(pantryMaxQtyCap)) {
+    list = list.filter((it) => it.quantity <= pantryMaxQtyCap);
+  }
+  return list;
+}
+
+function openPantryEditDialog(itemId) {
+  const it = pantryState.items.find((x) => x.id === itemId);
+  if (!it) return;
+  const dlg = document.getElementById("pantryEditDialog");
+  const n = document.getElementById("pantryEditName");
+  const l = document.getElementById("pantryEditLoc");
+  const q = document.getElementById("pantryEditQty");
+  const u = document.getElementById("pantryEditUnit");
+  if (!dlg || !n || !l || !q || !u) return;
+  n.value = it.name;
+  l.value = it.location;
+  q.value = String(it.quantity);
+  u.value = it.unit || "יח׳";
+  dlg.dataset.itemId = itemId;
+  dlg.showModal();
+  queueMicrotask(() => n.focus());
+}
+
+function renderPantryPage() {
+  const bar = document.getElementById("pantryFilterBar");
+  const root = document.getElementById("pantryListRoot");
+  const sum = document.getElementById("pantrySummary");
+  const menuInner = document.getElementById("pantryStockFilterMenuInner");
+  const hintEl = document.getElementById("pantryFilterHint");
+  if (!bar || !root) return;
+
+  bar.innerHTML = "";
+  const mkChip = (filterId, label) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = `pantry-chip ${pantryLocFilter === filterId ? "active" : ""}`;
+    b.setAttribute("data-pantry-filter", filterId);
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", pantryLocFilter === filterId ? "true" : "false");
+    b.textContent = label;
+    bar.appendChild(b);
+  };
+  mkChip("all", "הכל");
+  for (const loc of PANTRY_LOCATIONS) {
+    mkChip(loc.id, loc.label);
+  }
+
+  if (menuInner) {
+    const stockOpts = [
+      ["all", "כל הפריטים"],
+      ["in_stock", "רק עם מלאי"],
+      ["out", "רק שאזלו"],
+      ["low", `מלאי נמוך (עד ${PANTRY_LOW_THRESHOLD} יח׳)`],
+    ];
+    const capOpts = [
+      [null, "כל הכמויות (ללא הגבלה)"],
+      [1, "עד יחידה אחת שנותרה"],
+      [2, "עד 2 יחידות שנותרו"],
+      [3, "עד 3 יחידות"],
+      [5, "עד 5 יחידות"],
+      [10, "עד 10 יחידות"],
+    ];
+    menuInner.innerHTML = `
+      <div class="pantry-menu-heading">מצב מלאי</div>
+      ${stockOpts
+        .map(
+          ([id, label]) =>
+            `<button type="button" class="daily-kebab-item ${pantryStockFilter === id ? "is-active" : ""}" role="menuitem" data-action="pantry-stock-filter" data-filter="${id}">${escapeHtml(label)}</button>`,
+        )
+        .join("")}
+      <div class="pantry-menu-heading">לפי כמות שנותרה (מקסימום)</div>
+      ${capOpts
+        .map(([cap, label]) => {
+          const c = cap == null ? "none" : String(cap);
+          const active = cap == null ? pantryMaxQtyCap == null : pantryMaxQtyCap === cap;
+          return `<button type="button" class="daily-kebab-item ${active ? "is-active" : ""}" role="menuitem" data-action="pantry-max-cap" data-cap="${c}">${escapeHtml(label)}</button>`;
+        })
+        .join("")}
+    `;
+  }
+
+  const filtered = filterPantryItemsByStock(pantryState.items);
+  filtered.sort((a, b) => {
+    const ae = a.quantity <= 0 ? 1 : 0;
+    const be = b.quantity <= 0 ? 1 : 0;
+    if (ae !== be) return ae - be;
+    return a.name.localeCompare(b.name, "he");
+  });
+
+  if (hintEl) {
+    const parts = [];
+    if (pantryStockFilter !== "all") {
+      const labels = {
+        in_stock: "רק עם מלאי",
+        out: "רק שאזלו",
+        low: `מלאי נמוך (עד ${PANTRY_LOW_THRESHOLD} יח׳)`,
+      };
+      parts.push(labels[pantryStockFilter] ?? pantryStockFilter);
+    }
+    if (pantryMaxQtyCap != null) parts.push(`נותרו עד ${pantryMaxQtyCap} יח׳`);
+    hintEl.textContent = parts.length ? `סינון פעיל: ${parts.join(" · ")}` : "";
+    hintEl.classList.toggle("hidden", parts.length === 0);
+  }
+
+  root.innerHTML = "";
+  const anyItems = pantryState.items.length > 0;
+  const filtersOn =
+    pantryLocFilter !== "all" ||
+    pantryStockFilter !== "all" ||
+    pantryMaxQtyCap != null;
+  if (filtered.length === 0) {
+    const div = document.createElement("div");
+    div.className = "empty";
+    if (!anyItems) {
+      div.innerHTML = `<div class="empty-text">אין עדיין פריטים ברשימה. למעלה אפשר להוסיף מוצר — שם, מיקום, כמות ויחידת מידה.</div>`;
+    } else if (filtersOn) {
+      div.innerHTML = `<div class="empty-text">אין פריטים שמתאימים לסינון הנוכחי (מיקום או ⋮). נסי לשנות את הסינון או לאפס את תפריט ה⋮.</div>`;
+    } else {
+      div.innerHTML = `<div class="empty-text">אין פריטים להצגה.</div>`;
+    }
+    root.appendChild(div);
+  } else {
+    for (const it of filtered) {
+      const row = document.createElement("article");
+      row.className = `pantry-row ${it.quantity <= 0 ? "pantry-row--empty" : ""}`;
+      row.setAttribute("role", "listitem");
+      const locLabel = pantryLocationLabel(it.location);
+      const qStr = formatPantryQty(it.quantity);
+      const unitEsc = escapeHtml(it.unit || "יח׳");
+      const lowBadge =
+        it.quantity > 0 && it.quantity <= PANTRY_LOW_THRESHOLD
+          ? '<span class="pantry-badge-out" style="background:#fff8e1;color:#b28704;border:1px solid rgba(180,150,4,0.35)">מעט נשאר</span>'
+          : "";
+      row.innerHTML = `
+        <div class="pantry-row-main">
+          <div class="pantry-row-title">${escapeHtml(it.name)}</div>
+          <div class="pantry-row-meta">
+            <span class="pantry-loc-pill">${escapeHtml(locLabel)}</span>
+            ${it.quantity <= 0 ? '<span class="pantry-badge-out">אזל — לקנות</span>' : lowBadge}
+          </div>
+        </div>
+        <div class="pantry-row-actions">
+          <div class="pantry-qty-big">${qStr} <span style="font-size:0.65em;font-weight:600;color:var(--muted2)">${unitEsc}</span></div>
+          <div class="pantry-btn-row">
+            <button type="button" class="pantry-act pantry-act--primary" data-action="pantry-consume" data-item-id="${escapeHtml(it.id)}">השתמשתי (−1)</button>
+            <button type="button" class="pantry-act" data-action="pantry-restock" data-item-id="${escapeHtml(it.id)}">+1</button>
+            <button type="button" class="pantry-act" data-action="pantry-edit" data-item-id="${escapeHtml(it.id)}">עריכה</button>
+            <button type="button" class="pantry-act pantry-act--danger" data-action="pantry-delete" data-item-id="${escapeHtml(it.id)}">מחיקה</button>
+          </div>
+        </div>
+      `;
+      root.appendChild(row);
+    }
+  }
+
+  if (sum) {
+    const total = pantryState.items.length;
+    const out = pantryState.items.filter((x) => x.quantity <= 0).length;
+    const low = pantryState.items.filter(
+      (x) => x.quantity > 0 && x.quantity <= PANTRY_LOW_THRESHOLD,
+    ).length;
+    sum.textContent = `סה״כ ${total} פריטים ברשימה • ${out} אזלו • ${low} במלאי נמוך (עד ${PANTRY_LOW_THRESHOLD} יח׳)`;
   }
 }
 
@@ -1603,6 +2064,55 @@ function renderSubtasks(idea, task, subtasksListEl) {
   });
 }
 
+function wireDailyTimerDialog() {
+  const dlg = document.getElementById("dailyTimerDialog");
+  const btnStart = document.getElementById("dailyTimerStart");
+  const btnStop = document.getElementById("dailyTimerStop");
+  const btnDiscard = document.getElementById("dailyTimerDiscard");
+  const btnClose = document.getElementById("dailyTimerCloseBtn");
+  if (!dlg || !btnStart || !btnStop || !btnDiscard || !btnClose) return;
+
+  dlg.addEventListener("close", () => clearDailyTimerTick());
+
+  btnClose.addEventListener("click", () => {
+    if (dlg instanceof HTMLDialogElement) dlg.close();
+  });
+
+  btnStart.addEventListener("click", () => {
+    if (!(dlg instanceof HTMLDialogElement)) return;
+    const dk = dlg.dataset.targetDateKey;
+    const id = dlg.dataset.targetItemId;
+    if (!dk || !id) return;
+    if (timingState.active) {
+      toast("כבר רץ טיימר — סיימי אותו או בטלי מדידה.");
+      return;
+    }
+    const it = findDayJournalItem(dk, id);
+    if (!it) return;
+    startDayItemTimer(timingState, { dateKey: dk, itemId: id, title: dayItemLabel(it) });
+    syncDailyTimerDialogUI();
+    render();
+  });
+
+  btnStop.addEventListener("click", () => {
+    if (!timingState.active) return;
+    const ent = stopDayItemTimer(timingState);
+    syncDailyTimerDialogUI();
+    render();
+    if (ent) toast(`נשמר: ${ent.durationMinutes} דק׳`);
+  });
+
+  btnDiscard.addEventListener("click", () => {
+    if (!timingState.active) return;
+    const ok = confirm("למחוק את המדידה בלי לשמור?");
+    if (!ok) return;
+    cancelActiveTimer(timingState);
+    syncDailyTimerDialogUI();
+    render();
+    toast("הטיימר בוטל.");
+  });
+}
+
 function wireGlobalHandlers() {
   const topMenuToggle = document.getElementById("topMenuToggle");
   const topMenuDialog = document.getElementById("topMenuDialog");
@@ -1641,6 +2151,17 @@ function wireGlobalHandlers() {
     });
   }
 
+  document.addEventListener("click", (e) => {
+    const inside = e.target.closest("details.daily-kebab");
+    queueMicrotask(() => {
+      document.querySelectorAll("details.daily-kebab[open]").forEach((d) => {
+        if (d !== inside) d.open = false;
+      });
+    });
+  });
+
+  wireDailyTimerDialog();
+
   const settingsBtn = document.getElementById("settingsBtn");
   const settingsDialog = document.getElementById("settingsDialog");
   const setDefaultCalMode = document.getElementById("setDefaultCalMode");
@@ -1663,14 +2184,38 @@ function wireGlobalHandlers() {
     });
   }
 
+  const exportPdfBtn = document.getElementById("exportPdfBtn");
+  if (exportPdfBtn) {
+    exportPdfBtn.addEventListener("click", async () => {
+      document.getElementById("topMenuDialog")?.close?.();
+      const plain = fullAppToExportPlainText(state, dayJournal);
+      toast("מכינה PDF…");
+      try {
+        const { downloadFullBackupPdf } = await import("./pdf-export.js");
+        await downloadFullBackupPdf({
+          title: `${APP_DISPLAY_NAME} — גיבוי מלא`,
+          plainText: plain,
+        });
+        toast("הקובץ הורד (תיקיית הורדות). אפשר לשלוח אותו לאן שרוצים.");
+      } catch (err) {
+        console.error(err);
+        toast("יצירת PDF נכשלה. נסי מחשב או דפדפן אחר.");
+      }
+    });
+  }
+
   els.resetBtn.addEventListener("click", () => {
-    const ok = confirm("למחוק את כל הנתונים? (רעיונות + יומן יומי — איפוס מלא)");
+    const ok = confirm("למחוק את כל הנתונים? (רעיונות, יומן, תזמון, מלאי — איפוס מלא)");
     if (!ok) return;
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(DAY_JOURNAL_STORAGE_KEY);
     localStorage.removeItem(LAST_CALENDAR_DAY_KEY);
+    localStorage.removeItem(TIMING_LOG_KEY);
+    localStorage.removeItem(PANTRY_STORAGE_KEY);
     state = loadState();
     dayJournal = loadDayJournal();
+    timingState = loadTimingState();
+    pantryState = loadPantry();
     lastKnownCalendarDayKey = localDateKey();
     dailyBrowseDateKey = lastKnownCalendarDayKey;
     persistLastKnownCalendarDay();
@@ -1736,6 +2281,65 @@ function wireGlobalHandlers() {
   bindAppMode("topNavFuture", "daily-future");
   bindAppMode("topNavHistory", "daily-history");
   bindAppMode("topNavDailyMaster", "daily-master");
+  bindAppMode("topNavTiming", "timing");
+  bindAppMode("topNavPantry", "pantry");
+
+  document.getElementById("pantryFilterBar")?.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-pantry-filter]");
+    if (!b) return;
+    const f = b.getAttribute("data-pantry-filter");
+    if (f) {
+      pantryLocFilter = f;
+      render();
+    }
+  });
+
+  document.getElementById("pantryAddForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = document.getElementById("pantryNewName")?.value?.trim();
+    const loc = document.getElementById("pantryNewLoc")?.value ?? "pantry";
+    const qtyRaw = document.getElementById("pantryNewQty")?.value ?? "1";
+    const unit = document.getElementById("pantryNewUnit")?.value?.trim() || "יח׳";
+    if (!name) {
+      toast("נא להזין שם מוצר.");
+      return;
+    }
+    const qty = Number(String(qtyRaw).replace(",", "."));
+    if (!Number.isFinite(qty) || qty < 0) {
+      toast("כמות לא תקינה.");
+      return;
+    }
+    addPantryItem(pantryState, { name, location: loc, quantity: qty, unit });
+    const nameInp = document.getElementById("pantryNewName");
+    const qtyInp = document.getElementById("pantryNewQty");
+    if (nameInp) nameInp.value = "";
+    if (qtyInp) qtyInp.value = "1";
+    toast("נוסף למלאי.");
+    render();
+  });
+
+  document.getElementById("pantryEditSave")?.addEventListener("click", () => {
+    const dlg = document.getElementById("pantryEditDialog");
+    const id = dlg?.dataset.itemId;
+    if (!id) return;
+    const name = document.getElementById("pantryEditName")?.value?.trim();
+    const loc = document.getElementById("pantryEditLoc")?.value;
+    const qtyRaw = document.getElementById("pantryEditQty")?.value ?? "0";
+    const unit = document.getElementById("pantryEditUnit")?.value?.trim() || "יח׳";
+    if (!name) {
+      toast("נא להזין שם.");
+      return;
+    }
+    const qty = Number(String(qtyRaw).replace(",", "."));
+    if (!Number.isFinite(qty) || qty < 0) {
+      toast("כמות לא תקינה.");
+      return;
+    }
+    updatePantryItem(pantryState, id, { name, location: loc, quantity: qty, unit });
+    if (dlg instanceof HTMLDialogElement) dlg.close();
+    toast("עודכן.");
+    render();
+  });
 
   document.getElementById("dailyMasterExportPdf")?.addEventListener("click", () => openDailyMasterPdfExport());
 
@@ -1858,6 +2462,11 @@ function wireGlobalHandlers() {
       const dk = btn.getAttribute("data-date-key");
       const id = btn.getAttribute("data-item-id");
       if (!dk || !id) return;
+      const kab = btn.closest("details.daily-kebab");
+      if (kab) kab.open = false;
+      if (timingState.active?.dateKey === dk && timingState.active?.itemId === id) {
+        cancelActiveTimer(timingState);
+      }
       deleteDayItem(dayJournal, dk, id);
       saveDayJournal(dayJournal);
       render();
@@ -1868,7 +2477,77 @@ function wireGlobalHandlers() {
       const dk = btn.getAttribute("data-date-key");
       const id = btn.getAttribute("data-item-id");
       if (!dk || !id) return;
+      const kab = btn.closest("details.daily-kebab");
+      if (kab) kab.open = false;
       openDailyEditDialog(dk, id);
+      return;
+    }
+
+    if (action === "daily-timer") {
+      const dk = btn.getAttribute("data-date-key");
+      const id = btn.getAttribute("data-item-id");
+      if (!dk || !id) return;
+      const kab = btn.closest("details.daily-kebab");
+      if (kab) kab.open = false;
+      openDailyTimerDialog(dk, id);
+      return;
+    }
+
+    if (action === "pantry-consume") {
+      const id = btn.getAttribute("data-item-id");
+      if (!id) return;
+      consumePantry(pantryState, id, 1);
+      render();
+      toast("עודכן במלאי.");
+      return;
+    }
+
+    if (action === "pantry-restock") {
+      const id = btn.getAttribute("data-item-id");
+      if (!id) return;
+      restockPantry(pantryState, id, 1);
+      render();
+      toast("נוספה יחידה.");
+      return;
+    }
+
+    if (action === "pantry-edit") {
+      const id = btn.getAttribute("data-item-id");
+      if (!id) return;
+      openPantryEditDialog(id);
+      return;
+    }
+
+    if (action === "pantry-delete") {
+      const id = btn.getAttribute("data-item-id");
+      if (!id) return;
+      const it = pantryState.items.find((x) => x.id === id);
+      const ok = confirm(`להסיר את «${it?.name ?? "הפריט"}» מהמלאי?`);
+      if (!ok) return;
+      deletePantryItem(pantryState, id);
+      render();
+      toast("הוסר מהרשימה.");
+      return;
+    }
+
+    if (action === "pantry-stock-filter") {
+      const f = btn.getAttribute("data-filter");
+      if (f === "all" || f === "in_stock" || f === "out" || f === "low") {
+        pantryStockFilter = f;
+        const kab = btn.closest("details.daily-kebab");
+        if (kab) kab.open = false;
+        render();
+      }
+      return;
+    }
+
+    if (action === "pantry-max-cap") {
+      const c = btn.getAttribute("data-cap");
+      pantryMaxQtyCap = c === "none" || c == null || c === "" ? null : Number(c);
+      if (pantryMaxQtyCap != null && !Number.isFinite(pantryMaxQtyCap)) pantryMaxQtyCap = null;
+      const kab = btn.closest("details.daily-kebab");
+      if (kab) kab.open = false;
+      render();
       return;
     }
 
@@ -2102,6 +2781,11 @@ function render() {
   if (appMode === "daily-future") renderDailyFuturePage();
   if (appMode === "daily-history") renderDailyHistoryPage();
   if (appMode === "daily-master") renderDailyMasterPage();
+  if (appMode === "timing") renderDailyTimingPage();
+  if (appMode === "pantry") renderPantryPage();
+
+  const timerDlg = document.getElementById("dailyTimerDialog");
+  if (timerDlg instanceof HTMLDialogElement && timerDlg.open) syncDailyTimerDialogUI();
 
   applyMobileLayout();
 }
