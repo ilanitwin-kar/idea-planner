@@ -99,6 +99,29 @@
             </select>
           </label>
         </div>
+        <div class="section">
+          <div class="section-title">גיבוי לענן (אופציונלי)</div>
+          <p class="dialog-text dialog-text--tight">
+            הנתונים נשמרים אצלך בדפדפן. אפשר להעלות עותק ל-Firestore תחת חשבון Google — בלי שינוי אוטומטי במכשיר (רק בלחיצה על «שחזור»).
+          </p>
+          <p id="cloudBackupNoConfig" class="dialog-hint cloud-backup-no-env hidden">
+            לא הוגדרו משתני Vite ל-Firebase. צרי קובץ ‎.env.local‎ בשורש הפרויקט (ליד ‎package.json‎) לפי ‎.env.example‎, מלאי את הערכים מהקונסולה, ואז <strong>עצרי והפעילי מחדש</strong> את ‎npm run dev‎.
+          </p>
+          <div id="cloudBackupPanel" class="cloud-backup-panel">
+            <p id="cloudBackupUserLine" class="dialog-text dialog-text--tight">—</p>
+            <label class="checkline">
+              <input id="cloudAutoBackup" type="checkbox" />
+              גיבוי אוטומטי קליל אחרי שינוי (עיכוב ~חצי שנייה)
+            </label>
+            <div class="dialog-actions dialog-actions--wrap">
+              <button id="cloudSignInBtn" class="btn" type="button">התחברות Google</button>
+              <button id="cloudSignOutBtn" class="btn btn-ghost hidden" type="button">התנתקות</button>
+              <button id="cloudBackupNowBtn" class="btn" type="button" disabled>גיבוי עכשיו</button>
+              <button id="cloudRestoreBtn" class="btn btn-ghost" type="button" disabled>שחזור מהענן…</button>
+            </div>
+            <p id="cloudBackupHint" class="dialog-hint"></p>
+          </div>
+        </div>
         <div class="dialog-actions">
           <button id="settingsSave" class="btn" type="button">שמירה</button>
           <button class="btn btn-ghost" value="cancel" type="submit">סגירה</button>
