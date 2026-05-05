@@ -873,6 +873,103 @@ body{
   font-weight: 800;
 }
 
+.dialog--wide .dialog-inner{
+  max-width: min(560px, 100vw - 24px);
+}
+.pantry-import-toolbar{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.pantry-import-loc{
+  flex: 1 1 200px;
+  margin: 0;
+}
+.pantry-import-table-wrap{
+  max-height: min(50vh, 420px);
+  overflow: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  margin-bottom: 12px;
+  background: var(--surface-2);
+}
+.pantry-import-table{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.pantry-import-table th,
+.pantry-import-table td{
+  padding: 8px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: middle;
+}
+.pantry-import-table th{
+  background: #fffafb;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.pantry-import-table .pic-col-check{ width: 44px; text-align: center; }
+.pantry-import-table .pic-col-qty{ width: 88px; }
+.pantry-import-table .pic-name{ width: 100%; min-width: 0; }
+.pantry-import-table .pic-qty{ width: 100%; }
+
+.pantry-import-raw-wrap{
+  margin-top: 12px;
+}
+.pantry-import-raw-summary{
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--muted, #666);
+  user-select: none;
+}
+.pantry-bc-hint a{ color: inherit; text-decoration: underline; }
+.pantry-bc-video-wrap{
+  margin: 10px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #111;
+  max-height: 220px;
+}
+.pantry-bc-video{
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+}
+.pantry-bc-toolbar{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.pantry-bc-row{ margin-bottom: 8px; }
+.pantry-bc-fields{
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pantry-import-raw{
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  background: var(--surface-2, rgba(0,0,0,.04));
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(0,0,0,.08));
+}
+
 .pantry-filters{
   display: flex;
   flex-wrap: wrap;

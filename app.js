@@ -28,7 +28,9 @@ import {
   updatePantryItem,
   consumePantry,
   restockPantry,
+  applyPantryImportRows,
 } from "./pantry.js";
+import { lookupOpenFoodFactsProduct, normalizeBarcodeInput } from "./pantry-barcode.js";
 
 const APP_DISPLAY_NAME = "מרכז הרעיונות של אילנית";
 
@@ -2064,6 +2066,312 @@ function renderSubtasks(idea, task, subtasksListEl) {
   });
 }
 
+function wirePantryImportUI() {
+  const openBtn = document.getElementById("pantryImportOpenBtn");
+  const pickBtn = document.getElementById("pantryImportPickBtn");
+  const fileInp = document.getElementById("pantryImportFile");
+  const dlg = document.getElementById("pantryImportDialog");
+  const status = document.getElementById("pantryImportStatus");
+  const tbody = document.getElementById("pantryImportTbody");
+  const applyBtn = document.getElementById("pantryImportApply");
+  const cancelBtn = document.getElementById("pantryImportCancel");
+  const allChk = document.getElementById("pantryImportAll");
+  const rawWrap = document.getElementById("pantryImportRawWrap");
+  const rawPre = document.getElementById("pantryImportRaw");
+
+  const pick = () => fileInp?.click();
+
+  openBtn?.addEventListener("click", pick);
+  pickBtn?.addEventListener("click", pick);
+
+  allChk?.addEventListener("change", () => {
+    const on = !!allChk.checked;
+    tbody?.querySelectorAll(".pic-check").forEach((c) => {
+      if (c instanceof HTMLInputElement) c.checked = on;
+    });
+  });
+
+  cancelBtn?.addEventListener("click", () => {
+    if (dlg instanceof HTMLDialogElement) dlg.close();
+  });
+
+  applyBtn?.addEventListener("click", () => {
+    const loc = document.getElementById("pantryImportLoc")?.value ?? "pantry";
+    const rows = [];
+    tbody?.querySelectorAll("tr").forEach((tr) => {
+      const ck = tr.querySelector(".pic-check");
+      if (!(ck instanceof HTMLInputElement) || !ck.checked) return;
+      const nameInp = tr.querySelector(".pic-name");
+      const qtyInp = tr.querySelector(".pic-qty");
+      const name = nameInp instanceof HTMLInputElement ? nameInp.value.trim() : "";
+      const qty = Number(qtyInp instanceof HTMLInputElement ? qtyInp.value : 0);
+      if (name && qty > 0) rows.push({ name, qty });
+    });
+    if (!rows.length) {
+      toast("לא נבחרו שורות תקינות להוספה.");
+      return;
+    }
+    applyPantryImportRows(pantryState, rows, loc, "יח׳");
+    if (dlg instanceof HTMLDialogElement) dlg.close();
+    toast(`עודכנו ${rows.length} שורות במלאי (מיזוג לפי שם ומיקום).`);
+    render();
+  });
+
+  fileInp?.addEventListener("change", async () => {
+    const f = fileInp.files?.[0];
+    if (!f || !dlg || !status || !tbody) return;
+    if (!(dlg instanceof HTMLDialogElement)) return;
+    dlg.showModal();
+    tbody.innerHTML = "";
+    if (allChk instanceof HTMLInputElement) allChk.checked = true;
+    if (rawWrap instanceof HTMLDetailsElement) {
+      rawWrap.classList.add("hidden");
+      rawWrap.open = false;
+    }
+    if (rawPre) rawPre.textContent = "";
+    status.textContent = "מעבדים…";
+    try {
+      const mod = await import("./pantry-import.js");
+      const isPdf = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+      let text;
+      if (isPdf) {
+        status.textContent = "קוראים PDF…";
+        text = await mod.extractPdfPlainText(f);
+      } else {
+        status.textContent =
+          "מזהים טקסט בתמונה (OCR). בפעם הראשונה נטענת שפה — זה עלול לקחת דקה-שתיים…";
+        text = await mod.ocrImageToText(f, (msg) => {
+          status.textContent = msg;
+        });
+      }
+      const { rows, label } = mod.autoParseReceiptText(text, isPdf);
+      const rawStr = String(text ?? "").trim();
+      if (!rows.length && rawStr && rawPre && rawWrap instanceof HTMLDetailsElement) {
+        const cap = 32000;
+        rawPre.textContent =
+          rawStr.length > cap
+            ? `${rawStr.slice(0, cap)}\n\n… (הטקסט קוצר — הקובץ ארוך מאוד)`
+            : rawStr;
+        rawWrap.classList.remove("hidden");
+        rawWrap.open = true;
+      }
+      if (!rows.length) {
+        status.textContent = `לא נמצאו שורות (${label}). נסי קובץ אחר או הוסיפי ידנית.`;
+      } else {
+        status.textContent = `${rows.length} שורות — ${label}. סמני, תקני כמויות ולחצי «הוספה למלאי».`;
+        for (const r of rows) {
+          const tr = document.createElement("tr");
+          const td0 = document.createElement("td");
+          const ck = document.createElement("input");
+          ck.type = "checkbox";
+          ck.className = "pic-check";
+          ck.checked = true;
+          td0.appendChild(ck);
+          const td1 = document.createElement("td");
+          const inpN = document.createElement("input");
+          inpN.type = "text";
+          inpN.className = "input pic-name";
+          inpN.value = r.name;
+          td1.appendChild(inpN);
+          const td2 = document.createElement("td");
+          const inpQ = document.createElement("input");
+          inpQ.type = "number";
+          inpQ.className = "input pic-qty";
+          inpQ.min = "0";
+          inpQ.step = "1";
+          inpQ.value = String(Math.round(r.qty));
+          td2.appendChild(inpQ);
+          tr.appendChild(td0);
+          tr.appendChild(td1);
+          tr.appendChild(td2);
+          tbody.appendChild(tr);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      status.textContent = `שגיאה: ${e?.message ?? e}`;
+    }
+    fileInp.value = "";
+  });
+}
+
+function wirePantryBarcodeUI() {
+  const openBtn = document.getElementById("pantryBarcodeOpenBtn");
+  const dlg = document.getElementById("pantryBarcodeDialog");
+  const video = document.getElementById("pantryBarcodeVideo");
+  const videoWrap = document.getElementById("pantryBarcodeVideoWrap");
+  const startCam = document.getElementById("pantryBarcodeStartCam");
+  const stopCam = document.getElementById("pantryBarcodeStopCam");
+  const codeInp = document.getElementById("pantryBarcodeCode");
+  const lookupBtn = document.getElementById("pantryBarcodeLookup");
+  const status = document.getElementById("pantryBarcodeStatus");
+  const nameInp = document.getElementById("pantryBarcodeName");
+  const qtyInp = document.getElementById("pantryBarcodeQty");
+  const locSel = document.getElementById("pantryBarcodeLoc");
+  const addBtn = document.getElementById("pantryBarcodeAdd");
+  const cancelBtn = document.getElementById("pantryBarcodeCancel");
+
+  if (
+    !openBtn ||
+    !dlg ||
+    !(dlg instanceof HTMLDialogElement) ||
+    !video ||
+    !videoWrap ||
+    !startCam ||
+    !stopCam ||
+    !codeInp ||
+    !lookupBtn ||
+    !status ||
+    !nameInp ||
+    !qtyInp ||
+    !locSel ||
+    !addBtn ||
+    !cancelBtn
+  ) {
+    return;
+  }
+
+  let scanControls = null;
+
+  const cleanupVideo = async () => {
+    try {
+      scanControls?.stop();
+    } catch {
+      /* ignore */
+    }
+    scanControls = null;
+    try {
+      const { BrowserCodeReader } = await import("@zxing/browser");
+      if (video instanceof HTMLVideoElement) BrowserCodeReader.cleanVideoSource(video);
+    } catch {
+      /* ignore */
+    }
+    videoWrap.classList.add("hidden");
+    startCam.classList.remove("hidden");
+    stopCam.classList.add("hidden");
+  };
+
+  const resetForm = () => {
+    codeInp.value = "";
+    nameInp.value = "";
+    qtyInp.value = "1";
+    status.textContent = "";
+    const defLoc = document.getElementById("pantryNewLoc")?.value;
+    if (defLoc && locSel instanceof HTMLSelectElement) locSel.value = defLoc;
+  };
+
+  const runLookup = async () => {
+    const code = normalizeBarcodeInput(codeInp.value);
+    if (code.length < 8) {
+      status.textContent = "הקלידי לפחות 8 ספרות של הברקוד, או סרקי במצלמה.";
+      return;
+    }
+    codeInp.value = code;
+    status.textContent = "מחפשים שם…";
+    const res = await lookupOpenFoodFactsProduct(code);
+    if (res.ok) {
+      nameInp.value = res.name;
+      status.textContent = "נמצא שם במאגר. בדקי, ערכי כמות והוסיפי.";
+    } else {
+      status.textContent = res.error;
+    }
+  };
+
+  openBtn.addEventListener("click", async () => {
+    resetForm();
+    await cleanupVideo();
+    dlg.showModal();
+  });
+
+  cancelBtn.addEventListener("click", () => {
+    void cleanupVideo();
+    dlg.close();
+  });
+
+  dlg.addEventListener("close", () => {
+    void cleanupVideo();
+  });
+
+  startCam.addEventListener("click", async () => {
+    await cleanupVideo();
+    status.textContent = "";
+    try {
+      const { BrowserMultiFormatReader, BrowserCodeReader } = await import("@zxing/browser");
+      const reader = new BrowserMultiFormatReader();
+      videoWrap.classList.remove("hidden");
+      startCam.classList.add("hidden");
+      stopCam.classList.remove("hidden");
+      status.textContent = "מסרקים… כוונו את הברקוד למרכז.";
+
+      let settled = false;
+      scanControls = await reader.decodeFromVideoDevice(
+        undefined,
+        video,
+        (result, _err, controls) => {
+          if (settled || !result) return;
+          settled = true;
+          const text = result.getText();
+          codeInp.value = normalizeBarcodeInput(text);
+          try {
+            controls.stop();
+          } catch {
+            /* ignore */
+          }
+          scanControls = null;
+          BrowserCodeReader.cleanVideoSource(video);
+          videoWrap.classList.add("hidden");
+          startCam.classList.remove("hidden");
+          stopCam.classList.add("hidden");
+          status.textContent = "נסרק. מחפשים שם…";
+          void runLookup();
+        },
+      );
+    } catch (e) {
+      console.error(e);
+      status.textContent =
+        /permission|notallowed|denied/i.test(String(e?.message ?? e))
+          ? "המצלמה חסומה — אפשר להקליד את הברקוד ידנית."
+          : "לא ניתן להפעיל סריקה במצלמה.";
+      await cleanupVideo();
+    }
+  });
+
+  stopCam.addEventListener("click", () => {
+    void cleanupVideo();
+    status.textContent = "";
+  });
+
+  lookupBtn.addEventListener("click", () => {
+    void runLookup();
+  });
+
+  codeInp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void runLookup();
+    }
+  });
+
+  addBtn.addEventListener("click", () => {
+    const name = nameInp.value.trim();
+    const qty = Number(qtyInp.value);
+    const loc = locSel.value ?? "pantry";
+    if (!name) {
+      toast("חסר שם מוצר — חפשי ברקוד או הקלידי שם מהאריזה.");
+      return;
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      toast("כמות לא תקינה.");
+      return;
+    }
+    applyPantryImportRows(pantryState, [{ name, qty }], loc, "יח׳");
+    void cleanupVideo();
+    dlg.close();
+    render();
+    toast(`נוסף למלאי: ${name} (${qty})`);
+  });
+}
+
 function wireDailyTimerDialog() {
   const dlg = document.getElementById("dailyTimerDialog");
   const btnStart = document.getElementById("dailyTimerStart");
@@ -2161,6 +2469,8 @@ function wireGlobalHandlers() {
   });
 
   wireDailyTimerDialog();
+  wirePantryImportUI();
+  wirePantryBarcodeUI();
 
   const settingsBtn = document.getElementById("settingsBtn");
   const settingsDialog = document.getElementById("settingsDialog");

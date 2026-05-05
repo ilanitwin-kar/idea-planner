@@ -106,3 +106,31 @@ export function restockPantry(state, itemId, amount = 1) {
   it.quantity = roundQty(it.quantity + a);
   savePantry(state);
 }
+
+function normalizePantryNameKey(s) {
+  return String(s ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/** מיזוג שורות ייבוא למלאי — אותו שם באותו מיקום מגדיל כמות */
+export function applyPantryImportRows(state, rows, location, unit = "יח׳") {
+  const loc = PANTRY_LOCATIONS.some((l) => l.id === location) ? location : "pantry";
+  const u = String(unit ?? "יח׳").trim() || "יח׳";
+  for (const row of rows) {
+    const name = String(row.name ?? "").trim();
+    const qty = roundQty(row.qty);
+    if (!name || qty <= 0) continue;
+    const key = normalizePantryNameKey(name);
+    const existing = state.items.find(
+      (x) => x.location === loc && normalizePantryNameKey(x.name) === key,
+    );
+    if (existing) {
+      existing.quantity = roundQty(existing.quantity + qty);
+    } else {
+      state.items.push({ id: pantryUid(), name, location: loc, quantity: qty, unit: u });
+    }
+  }
+  savePantry(state);
+}

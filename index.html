@@ -149,6 +149,114 @@
       </div>
     </dialog>
 
+    <dialog id="pantryImportDialog" class="dialog dialog--wide">
+      <div class="dialog-inner">
+        <div class="dialog-title">ייבוא למלאי מקבלה / צילום</div>
+        <p id="pantryImportStatus" class="dialog-text">
+          ניתן להעלות PDF (למשל תעודת משלוח) או תמונה (צילום מסך מהאתר). התוצאות לבדיקה לפני שמירה.
+        </p>
+        <input
+          type="file"
+          id="pantryImportFile"
+          class="hidden"
+          accept=".pdf,application/pdf,image/png,image/jpeg,image/webp,image/gif"
+        />
+        <div class="pantry-import-toolbar">
+          <button type="button" id="pantryImportPickBtn" class="btn">בחירת קובץ</button>
+          <label class="checkline pantry-import-loc">
+            מיקום ברירת מחדל
+            <select id="pantryImportLoc" class="select">
+              <option value="fridge">מקרר</option>
+              <option value="pantry" selected>מזווה</option>
+              <option value="freezer">מקפיא</option>
+            </select>
+          </label>
+        </div>
+        <div class="pantry-import-table-wrap">
+          <table class="pantry-import-table">
+            <thead>
+              <tr>
+                <th class="pic-col-check">
+                  <input type="checkbox" id="pantryImportAll" checked title="סמן הכל" aria-label="סמן הכל" />
+                </th>
+                <th>מוצר</th>
+                <th class="pic-col-qty">כמות</th>
+              </tr>
+            </thead>
+            <tbody id="pantryImportTbody"></tbody>
+          </table>
+        </div>
+        <details id="pantryImportRawWrap" class="pantry-import-raw-wrap hidden">
+          <summary class="pantry-import-raw-summary">טקסט שחולץ (לעזרה באבחון)</summary>
+          <pre id="pantryImportRaw" class="pantry-import-raw" dir="auto"></pre>
+        </details>
+        <div class="dialog-actions">
+          <button type="button" id="pantryImportApply" class="btn">הוספה למלאי</button>
+          <button type="button" id="pantryImportCancel" class="btn btn-ghost">סגירה</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="pantryBarcodeDialog" class="dialog dialog--wide">
+      <div class="dialog-inner">
+        <div class="dialog-title">הוספה לפי ברקוד</div>
+        <p class="dialog-text pantry-bc-hint">
+          כוונו את המצלמה אל הברקוד על האריזה, או הקלידי את המספר מהאריזה ולחצו «חיפוש שם». השם מגיע מ־
+          <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>
+          (אינטרנט) — לא תמיד קיים או בעברית; אפשר לערוך לפני השמירה. הכמות תמיד שלכם.
+        </p>
+        <div id="pantryBarcodeVideoWrap" class="pantry-bc-video-wrap hidden">
+          <video id="pantryBarcodeVideo" class="pantry-bc-video" playsinline muted></video>
+        </div>
+        <div class="pantry-bc-toolbar">
+          <button type="button" id="pantryBarcodeStartCam" class="btn">הפעלת מצלמה</button>
+          <button type="button" id="pantryBarcodeStopCam" class="btn btn-ghost hidden">עצירת מצלמה</button>
+        </div>
+        <label class="checkline">ברקוד
+          <input
+            id="pantryBarcodeCode"
+            class="input"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="למשל 7290003578061"
+            maxlength="16"
+          />
+        </label>
+        <div class="pantry-bc-row">
+          <button type="button" id="pantryBarcodeLookup" class="btn">חיפוש שם</button>
+        </div>
+        <p id="pantryBarcodeStatus" class="dialog-hint" aria-live="polite"></p>
+        <div id="pantryBarcodeFields" class="pantry-bc-fields">
+          <label class="checkline">שם המוצר
+            <input id="pantryBarcodeName" class="input" type="text" maxlength="120" autocomplete="off" />
+          </label>
+          <label class="checkline">כמות
+            <input
+              id="pantryBarcodeQty"
+              class="input"
+              type="number"
+              min="0"
+              step="any"
+              value="1"
+              inputmode="decimal"
+            />
+          </label>
+          <label class="checkline">מיקום
+            <select id="pantryBarcodeLoc" class="select">
+              <option value="fridge">מקרר</option>
+              <option value="pantry" selected>מזווה</option>
+              <option value="freezer">מקפיא</option>
+            </select>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" id="pantryBarcodeAdd" class="btn">הוספה למלאי</button>
+          <button type="button" id="pantryBarcodeCancel" class="btn btn-ghost">סגירה</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="pantryEditDialog" class="dialog">
       <form method="dialog" class="dialog-inner" id="pantryEditForm">
         <div class="dialog-title">עריכת פריט במלאי</div>
@@ -412,7 +520,7 @@
       <div class="daily-inner">
         <div class="panel-header daily-header">
           <div class="panel-title">מלאי בית</div>
-          <div class="panel-hint">רשימת מזון שיש בבית — «השתמשתי» מורידה יחידה מהמלאי (כמו אחרי פתיחה או שימוש). פריטים באפור אזלו — זה סימן לקנות בפעם הבאה.</div>
+          <div class="panel-hint">רשימת מזון שיש בבית — «השתמשתי» מורידה יחידה מהמלאי. «ייבוא מקבלה / צילום»: PDF תעודת משלוח או תמונת מסך מהאתר (OCR). תמיד בדקי את הטבלה לפני שמירה.</div>
         </div>
         <div class="pantry-toolbar">
           <div id="pantryFilterBar" class="pantry-filters" role="tablist" aria-label="סינון לפי מיקום"></div>
@@ -436,6 +544,8 @@
           <input id="pantryNewQty" class="input pantry-qty-input" type="number" min="0" step="any" value="1" inputmode="decimal" aria-label="כמות התחלתית" />
           <input id="pantryNewUnit" class="input pantry-unit-input" type="text" maxlength="24" placeholder="יח׳" aria-label="יחידת מידה" />
           <button class="btn" type="submit">הוספה</button>
+          <button type="button" id="pantryImportOpenBtn" class="btn btn-ghost">ייבוא מקבלה / צילום</button>
+          <button type="button" id="pantryBarcodeOpenBtn" class="btn btn-ghost">ברקוד מהאריזה</button>
         </form>
         <div id="pantryListRoot" class="pantry-list" role="list"></div>
         <div id="pantrySummary" class="daily-progress"></div>
