@@ -214,9 +214,14 @@ function fullAppToExportPlainText(state, dayJournal) {
         continue;
       }
       for (const it of items) {
-        const mark = it.done ? "✓" : "☐";
         const t = String(it.title ?? it.text ?? "").trim() || "ללא כותרת";
-        parts.push(`  ${mark} ${t}`);
+        if (it.kind === "place") {
+          parts.push(`  📍 ${t}`);
+          continue;
+        }
+        const mark = it.done ? "✓" : "☐";
+        const pad = it.parentId ? "    " : "  ";
+        parts.push(`${pad}${mark} ${t}`);
       }
     }
   }
@@ -391,6 +396,8 @@ let pantryLocFilter = "all";
 let pantryStockFilter = "all";
 /** רק פריטים עם כמות שנותרה ≤ N (null = ללא הגבלה) */
 let pantryMaxQtyCap = null;
+/** חיפוש טקסט ברשימת המלאי המוצגת (אחרי סינון מיקום/⋮) */
+let pantryListSearchQuery = "";
 const PANTRY_LOW_THRESHOLD = 1;
 const _calendarTodayInit = localDateKey();
 let lastKnownCalendarDayKey =
@@ -405,14 +412,47 @@ function rollIncompleteDailyTasksFromTo(fromKey, toKey) {
   if (!fromKey || !toKey || fromKey >= toKey) return;
   const day = dayJournal.days[fromKey];
   if (!day?.items?.length) return;
-  const undone = day.items.filter((x) => !x.done);
-  if (undone.length === 0) return;
-  for (const it of undone) {
+  const items = day.items;
+  const rollingIds = new Set();
+  for (const x of items) {
+    if (x.kind === "place") continue;
+    if (!x.done) {
+      rollingIds.add(x.id);
+      if (x.parentId) {
+        const p = items.find((y) => y.id === x.parentId);
+        if (p?.kind === "place") rollingIds.add(p.id);
+      }
+    }
+  }
+  if (rollingIds.size === 0) return;
+
+  const toRoll = [
+    ...items.filter((x) => x.kind === "place" && rollingIds.has(x.id)),
+    ...items.filter((x) => x.kind !== "place" && rollingIds.has(x.id)),
+  ];
+
+  const idMap = new Map();
+  for (const it of toRoll) {
     const title = String(it.title ?? it.text ?? "").trim();
     if (!title) continue;
-    addDayItem(dayJournal, toKey, uid("ditem"), title);
+    idMap.set(it.id, uid("ditem"));
   }
-  day.items = day.items.filter((x) => x.done);
+  for (const it of toRoll) {
+    const title = String(it.title ?? it.text ?? "").trim();
+    if (!title || !idMap.has(it.id)) continue;
+    const newId = idMap.get(it.id);
+    let parentId;
+    if (it.parentId && idMap.has(it.parentId)) parentId = idMap.get(it.parentId);
+    const opts = {};
+    if (it.kind === "place") {
+      opts.kind = "place";
+      if (it.collapsed === true) opts.collapsed = true;
+    }
+    if (parentId) opts.parentId = parentId;
+    addDayItem(dayJournal, toKey, newId, title, opts);
+  }
+  const rolledOriginalIds = new Set(toRoll.map((x) => x.id));
+  day.items = day.items.filter((x) => !rolledOriginalIds.has(x.id));
   if (day.items.length === 0) delete dayJournal.days[fromKey];
 }
 
@@ -758,6 +798,70 @@ function findDayJournalItem(dateKey, itemId) {
   return day?.items?.find((x) => x.id === itemId) ?? null;
 }
 
+function dayItemsRenderModel(items) {
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const idx = new Map(items.map((it, i) => [it.id, i]));
+  const isRoot = (it) => !it.parentId || !byId.has(it.parentId);
+  const roots = items.filter(isRoot);
+  const childMap = new Map();
+  for (const it of items) {
+    if (!it.parentId || !byId.has(it.parentId)) continue;
+    if (!childMap.has(it.parentId)) childMap.set(it.parentId, []);
+    childMap.get(it.parentId).push(it);
+  }
+  for (const arr of childMap.values()) {
+    arr.sort((a, b) => (idx.get(a.id) ?? 0) - (idx.get(b.id) ?? 0));
+  }
+  return { roots, childMap };
+}
+
+function createDailyPlaceRow(dateKey, it) {
+  const label = escapeHtml(dayItemLabel(it));
+  const collapsed = !!it.collapsed;
+  const row = document.createElement("div");
+  row.className = "daily-item daily-item--place";
+  row.innerHTML = `
+    <div class="daily-place-head">
+      <button type="button" class="daily-place-collapse" data-action="daily-place-collapse" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}" aria-expanded="${collapsed ? "false" : "true"}" title="${collapsed ? "הרחבה" : "כיווץ"}">${collapsed ? "▸" : "▾"}</button>
+      <span class="daily-place-pin" aria-hidden="true">📍</span>
+      <span class="daily-item-text daily-place-title">${label}</span>
+    </div>
+    <div class="daily-item-actions">
+      <details class="daily-kebab">
+        <summary class="daily-kebab-summary" aria-label="פעולות לכותרת מקום">⋮</summary>
+        <div class="daily-kebab-menu" role="menu">
+          <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-edit" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}">עריכה</button>
+          <button type="button" class="daily-kebab-item daily-kebab-item--danger" role="menuitem" data-action="daily-delete" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}">מחיקה (גם מה שמתחת)</button>
+        </div>
+      </details>
+    </div>
+  `;
+  return row;
+}
+
+function createDailyTaskRow(dateKey, it, { indent }) {
+  const label = escapeHtml(dayItemLabel(it));
+  const row = document.createElement("div");
+  row.className = `daily-item ${it.done ? "done" : ""}${indent ? " daily-item--child" : ""}`;
+  row.innerHTML = `
+    <label class="daily-check">
+      <input type="checkbox" ${it.done ? "checked" : ""} data-action="daily-toggle" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}" />
+      <span class="daily-item-text">${label}</span>
+    </label>
+    <div class="daily-item-actions">
+      <details class="daily-kebab">
+        <summary class="daily-kebab-summary" aria-label="פעולות למשימה">⋮</summary>
+        <div class="daily-kebab-menu" role="menu">
+          <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-edit" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}">עריכה</button>
+          <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-timer" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}">טיימר</button>
+          <button type="button" class="daily-kebab-item daily-kebab-item--danger" role="menuitem" data-action="daily-delete" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}">מחיקה</button>
+        </div>
+      </details>
+    </div>
+  `;
+  return row;
+}
+
 function renderDayItemsList(container, dateKey) {
   if (!container) return;
   container.innerHTML = "";
@@ -770,27 +874,19 @@ function renderDayItemsList(container, dateKey) {
     container.appendChild(div);
     return;
   }
-  for (const it of items) {
-    const label = escapeHtml(dayItemLabel(it));
-    const row = document.createElement("div");
-    row.className = `daily-item ${it.done ? "done" : ""}`;
-    row.innerHTML = `
-      <label class="daily-check">
-        <input type="checkbox" ${it.done ? "checked" : ""} data-action="daily-toggle" data-date-key="${dateKey}" data-item-id="${it.id}" />
-        <span class="daily-item-text">${label}</span>
-      </label>
-      <div class="daily-item-actions">
-        <details class="daily-kebab">
-          <summary class="daily-kebab-summary" aria-label="פעולות למשימה">⋮</summary>
-          <div class="daily-kebab-menu" role="menu">
-            <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-edit" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}">עריכה</button>
-            <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-timer" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}">טיימר</button>
-            <button type="button" class="daily-kebab-item daily-kebab-item--danger" role="menuitem" data-action="daily-delete" data-date-key="${escapeHtml(String(dateKey))}" data-item-id="${escapeHtml(String(it.id))}">מחיקה</button>
-          </div>
-        </details>
-      </div>
-    `;
-    container.appendChild(row);
+  const { roots, childMap } = dayItemsRenderModel(items);
+  for (const it of roots) {
+    if (it.kind === "place") {
+      container.appendChild(createDailyPlaceRow(dateKey, it));
+      const hideChildren = !!it.collapsed;
+      for (const ch of childMap.get(it.id) ?? []) {
+        const childRow = createDailyTaskRow(dateKey, ch, { indent: true });
+        if (hideChildren) childRow.classList.add("hidden");
+        container.appendChild(childRow);
+      }
+    } else {
+      container.appendChild(createDailyTaskRow(dateKey, it, { indent: false }));
+    }
   }
 }
 
@@ -811,6 +907,40 @@ function shiftDailyBrowse(deltaDays) {
     /* ignore */
   }
   render();
+}
+
+function syncDailyTodayFormPlaceSelect(dateKey) {
+  const kindEl = document.getElementById("dailyTodayKind");
+  const underEl = document.getElementById("dailyTodayUnderPlace");
+  const inputEl = document.getElementById("dailyTodayInput");
+  if (!kindEl || !underEl) return;
+  const isPlace = kindEl.value === "place";
+  underEl.classList.toggle("hidden", isPlace);
+  if (inputEl) {
+    inputEl.placeholder = isPlace
+      ? "שם המקום (למשל מכבי פארם)…"
+      : "משימה או מה לקנות…";
+  }
+  if (isPlace) return;
+  const day = dayJournal.days[dateKey];
+  const places = (day?.items ?? []).filter((x) => x.kind === "place");
+  const prev = underEl.value;
+  underEl.innerHTML =
+    `<option value="">— ברשימה הראשית (לא תחת חנות) —</option>` +
+    places
+      .map(
+        (p) =>
+          `<option value="${escapeHtml(String(p.id))}">${escapeHtml(String(p.title ?? ""))}</option>`,
+      )
+      .join("");
+  const form = document.getElementById("dailyTodayForm");
+  const pending = form?.dataset?.selectPlaceAfterRender;
+  if (pending && [...underEl.options].some((o) => o.value === pending)) {
+    underEl.value = pending;
+    delete form.dataset.selectPlaceAfterRender;
+  } else if (prev && [...underEl.options].some((o) => o.value === prev)) {
+    underEl.value = prev;
+  }
 }
 
 function renderDailyTodayPage() {
@@ -847,6 +977,7 @@ function renderDailyTodayPage() {
       progEl.textContent = `${pr.done}/${pr.total} הושלמו`;
     }
   }
+  syncDailyTodayFormPlaceSelect(viewKey);
 }
 
 function renderDailyFuturePage() {
@@ -981,44 +1112,63 @@ function renderDailyMasterPage() {
     return;
   }
 
-  let doneC = 0;
-  for (const { item } of rows) {
-    if (item.done) doneC += 1;
-  }
-  const total = rows.length;
+  const countable = rows.filter(({ item }) => item.kind !== "place");
+  const total = countable.length;
+  const doneC = countable.filter(({ item }) => item.done).length;
 
   let n = 0;
   for (const { dateKey, item } of rows) {
     n += 1;
     const label = dayItemLabel(item);
-    const mark = item.done ? "✓" : "✗";
-    const markClass = item.done ? "dm-mark dm-mark--done" : "dm-mark dm-mark--open";
     const dateLabel = formatShortHebrewDate(dateKey);
     const row = document.createElement("div");
-    row.className = `dm-row ${item.done ? "dm-row--done" : ""}`;
     row.setAttribute("role", "listitem");
-    row.innerHTML = `
-      <span class="dm-num" aria-hidden="true">${n}.</span>
-      <span class="${markClass}" title="${item.done ? "בוצע" : "לא בוצע"}" aria-hidden="true">${mark}</span>
-      <label class="dm-main">
-        <input type="checkbox" class="check" ${item.done ? "checked" : ""} data-action="daily-toggle" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}" aria-label="סימון ביצוע" />
-        <span class="dm-title">${escapeHtml(label || "ללא טקסט")}</span>
-      </label>
-      <span class="dm-date">${escapeHtml(dateLabel)}</span>
-      <details class="daily-kebab dm-kebab">
-        <summary class="daily-kebab-summary" aria-label="פעולות למשימה">⋮</summary>
-        <div class="daily-kebab-menu" role="menu">
-          <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-edit" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}">עריכה</button>
-          <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-timer" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}">טיימר</button>
-          <button type="button" class="daily-kebab-item daily-kebab-item--danger" role="menuitem" data-action="daily-delete" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}">מחיקה</button>
+    const isPlace = item.kind === "place";
+    const isChild = !!item.parentId;
+    if (isPlace) {
+      row.className = "dm-row dm-row--place";
+      row.innerHTML = `
+        <span class="dm-num" aria-hidden="true">${n}.</span>
+        <span class="dm-mark dm-mark--place" aria-hidden="true">📍</span>
+        <div class="dm-main dm-main--place">
+          <span class="dm-title">${escapeHtml(label || "ללא טקסט")}</span>
         </div>
-      </details>
-    `;
+        <span class="dm-date">${escapeHtml(dateLabel)}</span>
+        <details class="daily-kebab dm-kebab">
+          <summary class="daily-kebab-summary" aria-label="פעולות">⋮</summary>
+          <div class="daily-kebab-menu" role="menu">
+            <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-edit" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}">עריכה</button>
+            <button type="button" class="daily-kebab-item daily-kebab-item--danger" role="menuitem" data-action="daily-delete" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}">מחיקה</button>
+          </div>
+        </details>
+      `;
+    } else {
+      const mark = item.done ? "✓" : "✗";
+      const markClass = item.done ? "dm-mark dm-mark--done" : "dm-mark dm-mark--open";
+      row.className = `dm-row ${item.done ? "dm-row--done" : ""}${isChild ? " dm-row--child" : ""}`;
+      row.innerHTML = `
+        <span class="dm-num" aria-hidden="true">${n}.</span>
+        <span class="${markClass}" title="${item.done ? "בוצע" : "לא בוצע"}" aria-hidden="true">${mark}</span>
+        <label class="dm-main">
+          <input type="checkbox" class="check" ${item.done ? "checked" : ""} data-action="daily-toggle" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}" aria-label="סימון ביצוע" />
+          <span class="dm-title">${escapeHtml(label || "ללא טקסט")}</span>
+        </label>
+        <span class="dm-date">${escapeHtml(dateLabel)}</span>
+        <details class="daily-kebab dm-kebab">
+          <summary class="daily-kebab-summary" aria-label="פעולות למשימה">⋮</summary>
+          <div class="daily-kebab-menu" role="menu">
+            <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-edit" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}">עריכה</button>
+            <button type="button" class="daily-kebab-item" role="menuitem" data-action="daily-timer" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}">טיימר</button>
+            <button type="button" class="daily-kebab-item daily-kebab-item--danger" role="menuitem" data-action="daily-delete" data-date-key="${escapeHtml(dateKey)}" data-item-id="${escapeHtml(String(item.id))}">מחיקה</button>
+          </div>
+        </details>
+      `;
+    }
     container.appendChild(row);
   }
 
   if (progEl) {
-    progEl.textContent = `סה״כ ${total} • ${doneC} בוצעו • ${total - doneC} פתוחות`;
+    progEl.textContent = `סה״כ ${total} משימות • ${doneC} בוצעו • ${total - doneC} פתוחות (כותרות מקום לא נספרות)`;
   }
 }
 
@@ -1104,6 +1254,10 @@ function openDailyTimerDialog(dateKey, itemId) {
     toast("המשימה לא נמצאה.");
     return;
   }
+  if (it.kind === "place") {
+    toast("טיימר זמין לשורות משימה / קנייה, לא לכותרת מקום.");
+    return;
+  }
   const dlg = document.getElementById("dailyTimerDialog");
   if (!(dlg instanceof HTMLDialogElement)) return;
   dlg.dataset.targetDateKey = dateKey;
@@ -1142,19 +1296,126 @@ function renderDailyTimingPage() {
   }
 }
 
-function filterPantryItemsByStock(items) {
-  let list = items.filter((it) => pantryLocFilter === "all" || it.location === pantryLocFilter);
-  if (pantryStockFilter === "in_stock") list = list.filter((it) => it.quantity > 0);
-  else if (pantryStockFilter === "out") list = list.filter((it) => it.quantity <= 0);
-  else if (pantryStockFilter === "low") {
+/**
+ * סינון מלאי לפי מיקום, מצב מלאי ותקרת כמות.
+ * `overrides` — אופציונלי להחלפת הערכים הגלובליים (לספירות בתפריט / בשבבים).
+ */
+function filterPantryItemsCombined(items, overrides = {}) {
+  const loc = overrides.location ?? pantryLocFilter;
+  const stock = overrides.stock ?? pantryStockFilter;
+  const maxCap = "maxCap" in overrides ? overrides.maxCap : pantryMaxQtyCap;
+
+  let list = items.filter((it) => loc === "all" || it.location === loc);
+  if (stock === "in_stock") list = list.filter((it) => it.quantity > 0);
+  else if (stock === "out") list = list.filter((it) => it.quantity <= 0);
+  else if (stock === "low") {
     list = list.filter(
       (it) => it.quantity > 0 && it.quantity <= PANTRY_LOW_THRESHOLD,
     );
   }
-  if (pantryMaxQtyCap != null && Number.isFinite(pantryMaxQtyCap)) {
-    list = list.filter((it) => it.quantity <= pantryMaxQtyCap);
+  if (maxCap != null && Number.isFinite(maxCap)) {
+    list = list.filter((it) => it.quantity <= maxCap);
   }
   return list;
+}
+
+function filterPantryItemsByStock(items) {
+  return filterPantryItemsCombined(items);
+}
+
+/** רווח אחרי מילה או לפחות 3 תווים — לפני כן לא מציגים רשימה (פחות רעש) */
+function shouldShowPantryNameSuggest(raw) {
+  const t = String(raw ?? "").trim();
+  if (t.length < 2) return false;
+  if (/\s/.test(raw)) return true;
+  return t.length >= 3;
+}
+
+function collectPantrySuggestMatches(query) {
+  const raw = String(query ?? "");
+  if (!shouldShowPantryNameSuggest(raw)) return [];
+  const tokens = raw.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [];
+  const list = pantryState.items.filter((it) => {
+    const n = String(it.name ?? "").toLowerCase();
+    return tokens.every((t) => n.includes(t));
+  });
+  const qflat = tokens.join(" ");
+  list.sort((a, b) => {
+    const an = a.name.toLowerCase();
+    const bn = b.name.toLowerCase();
+    const ae = an === qflat ? 0 : an.startsWith(qflat) ? 1 : 2;
+    const be = bn === qflat ? 0 : bn.startsWith(qflat) ? 1 : 2;
+    if (ae !== be) return ae - be;
+    return a.name.localeCompare(b.name, "he");
+  });
+  return list.slice(0, 12);
+}
+
+function syncPantryNameSuggest() {
+  const inp = document.getElementById("pantryNewName");
+  const box = document.getElementById("pantryNewNameSuggest");
+  if (!inp || !box) return;
+  const matches = collectPantrySuggestMatches(inp.value);
+  if (matches.length === 0) {
+    box.hidden = true;
+    box.innerHTML = "";
+    inp.setAttribute("aria-expanded", "false");
+    return;
+  }
+  box.hidden = false;
+  inp.setAttribute("aria-expanded", "true");
+  box.innerHTML = matches
+    .map(
+      (it) =>
+        `<button type="button" class="pantry-suggest-item" role="option" data-pantry-suggest-id="${escapeHtml(it.id)}"><span class="pantry-suggest-name">${escapeHtml(it.name)}</span><span class="pantry-loc-pill pantry-suggest-loc">${escapeHtml(pantryLocationLabel(it.location))}</span></button>`,
+    )
+    .join("");
+}
+
+function wirePantryNameSuggest() {
+  const inp = document.getElementById("pantryNewName");
+  const box = document.getElementById("pantryNewNameSuggest");
+  if (!inp || !box) return;
+
+  let hideTimer = 0;
+  const hideSoon = () => {
+    window.clearTimeout(hideTimer);
+    hideTimer = window.setTimeout(() => {
+      box.hidden = true;
+      inp.setAttribute("aria-expanded", "false");
+    }, 180);
+  };
+
+  inp.addEventListener("input", () => {
+    window.clearTimeout(hideTimer);
+    syncPantryNameSuggest();
+  });
+  inp.addEventListener("focus", () => syncPantryNameSuggest());
+  inp.addEventListener("blur", hideSoon);
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      window.clearTimeout(hideTimer);
+      box.hidden = true;
+      inp.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  box.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+  });
+  box.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-pantry-suggest-id]");
+    if (!(btn instanceof HTMLElement)) return;
+    const id = btn.getAttribute("data-pantry-suggest-id");
+    if (!id) return;
+    window.clearTimeout(hideTimer);
+    inp.value = "";
+    box.hidden = true;
+    box.innerHTML = "";
+    inp.setAttribute("aria-expanded", "false");
+    openPantryEditDialog(id);
+  });
 }
 
 function openPantryEditDialog(itemId) {
@@ -1172,7 +1433,10 @@ function openPantryEditDialog(itemId) {
   u.value = it.unit || "יח׳";
   dlg.dataset.itemId = itemId;
   dlg.showModal();
-  queueMicrotask(() => n.focus());
+  queueMicrotask(() => {
+    document.getElementById(`pantry-item-${itemId}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    n.focus();
+  });
 }
 
 function renderPantryPage() {
@@ -1191,7 +1455,9 @@ function renderPantryPage() {
     b.setAttribute("data-pantry-filter", filterId);
     b.setAttribute("role", "tab");
     b.setAttribute("aria-selected", pantryLocFilter === filterId ? "true" : "false");
-    b.textContent = label;
+    const cnt = filterPantryItemsCombined(pantryState.items, { location: filterId }).length;
+    b.textContent = `${label} (${cnt})`;
+    b.setAttribute("aria-label", `${label}, ${cnt} פריטים לפי סינון המלאי והכמות (⋮)`);
     bar.appendChild(b);
   };
   mkChip("all", "הכל");
@@ -1217,29 +1483,38 @@ function renderPantryPage() {
     menuInner.innerHTML = `
       <div class="pantry-menu-heading">מצב מלאי</div>
       ${stockOpts
-        .map(
-          ([id, label]) =>
-            `<button type="button" class="daily-kebab-item ${pantryStockFilter === id ? "is-active" : ""}" role="menuitem" data-action="pantry-stock-filter" data-filter="${id}">${escapeHtml(label)}</button>`,
-        )
+        .map(([id, label]) => {
+          const cnt = filterPantryItemsCombined(pantryState.items, { stock: id }).length;
+          const text = `${label} (${cnt})`;
+          return `<button type="button" class="daily-kebab-item ${pantryStockFilter === id ? "is-active" : ""}" role="menuitem" data-action="pantry-stock-filter" data-filter="${id}">${escapeHtml(text)}</button>`;
+        })
         .join("")}
       <div class="pantry-menu-heading">לפי כמות שנותרה (מקסימום)</div>
       ${capOpts
         .map(([cap, label]) => {
           const c = cap == null ? "none" : String(cap);
           const active = cap == null ? pantryMaxQtyCap == null : pantryMaxQtyCap === cap;
-          return `<button type="button" class="daily-kebab-item ${active ? "is-active" : ""}" role="menuitem" data-action="pantry-max-cap" data-cap="${c}">${escapeHtml(label)}</button>`;
+          const cnt = filterPantryItemsCombined(pantryState.items, {
+            maxCap: cap == null ? null : cap,
+          }).length;
+          const text = `${label} (${cnt})`;
+          return `<button type="button" class="daily-kebab-item ${active ? "is-active" : ""}" role="menuitem" data-action="pantry-max-cap" data-cap="${c}">${escapeHtml(text)}</button>`;
         })
         .join("")}
     `;
   }
 
   const filtered = filterPantryItemsByStock(pantryState.items);
-  filtered.sort((a, b) => {
-    const ae = a.quantity <= 0 ? 1 : 0;
-    const be = b.quantity <= 0 ? 1 : 0;
-    if (ae !== be) return ae - be;
-    return a.name.localeCompare(b.name, "he");
-  });
+  const searchRaw = pantryListSearchQuery.trim().toLowerCase();
+  const searchTokens = searchRaw.split(/\s+/).filter(Boolean);
+  const displayed =
+    searchTokens.length === 0
+      ? filtered
+      : filtered.filter((it) => {
+          const n = String(it.name ?? "").toLowerCase();
+          return searchTokens.every((t) => n.includes(t));
+        });
+  displayed.sort((a, b) => a.name.localeCompare(b.name, "he"));
 
   if (hintEl) {
     const parts = [];
@@ -1262,6 +1537,7 @@ function renderPantryPage() {
     pantryLocFilter !== "all" ||
     pantryStockFilter !== "all" ||
     pantryMaxQtyCap != null;
+  const searchOn = searchTokens.length > 0;
   if (filtered.length === 0) {
     const div = document.createElement("div");
     div.className = "empty";
@@ -1273,9 +1549,15 @@ function renderPantryPage() {
       div.innerHTML = `<div class="empty-text">אין פריטים להצגה.</div>`;
     }
     root.appendChild(div);
+  } else if (displayed.length === 0) {
+    const div = document.createElement("div");
+    div.className = "empty";
+    div.innerHTML = `<div class="empty-text">אין פריטים התואמים לחיפוש. נסי מילה אחרת או מחקי את הטקסט בשדה «חיפוש ברשימה».</div>`;
+    root.appendChild(div);
   } else {
-    for (const it of filtered) {
+    for (const it of displayed) {
       const row = document.createElement("article");
+      row.id = `pantry-item-${it.id}`;
       row.className = `pantry-row ${it.quantity <= 0 ? "pantry-row--empty" : ""}`;
       row.setAttribute("role", "listitem");
       const locLabel = pantryLocationLabel(it.location);
@@ -1308,12 +1590,13 @@ function renderPantryPage() {
   }
 
   if (sum) {
-    const total = pantryState.items.length;
-    const out = pantryState.items.filter((x) => x.quantity <= 0).length;
-    const low = pantryState.items.filter(
+    const total = displayed.length;
+    const out = displayed.filter((x) => x.quantity <= 0).length;
+    const low = displayed.filter(
       (x) => x.quantity > 0 && x.quantity <= PANTRY_LOW_THRESHOLD,
     ).length;
-    sum.textContent = `סה״כ ${total} פריטים ברשימה • ${out} אזלו • ${low} במלאי נמוך (עד ${PANTRY_LOW_THRESHOLD} יח׳)`;
+    const searchBit = searchOn ? " וחיפוש" : "";
+    sum.textContent = `סה״כ ${total} פריטים בתצוגה (לפי הסינון${searchBit}) • ${out} אזלו • ${low} במלאי נמוך (עד ${PANTRY_LOW_THRESHOLD} יח׳)`;
   }
 }
 
@@ -1325,8 +1608,11 @@ function openDailyMasterPdfExport() {
   }
   const bodyRows = rows
     .map((r, i) => {
-      const mark = r.item.done ? "✓" : "✗";
-      const t = escapeHtml(dayItemLabel(r.item) || "—");
+      const isPlace = r.item.kind === "place";
+      const isChild = !!r.item.parentId;
+      const mark = isPlace ? "📍" : r.item.done ? "✓" : "✗";
+      const rawTitle = dayItemLabel(r.item) || "—";
+      const t = escapeHtml(`${isChild ? "↳ " : ""}${rawTitle}`);
       const dl = escapeHtml(formatShortHebrewDate(r.dateKey));
       return `<tr><td>${i + 1}</td><td>${mark}</td><td>${t}</td><td>${dl}</td></tr>`;
     })
@@ -2604,6 +2890,13 @@ function wireGlobalHandlers() {
     }
   });
 
+  wirePantryNameSuggest();
+
+  document.getElementById("pantryListSearch")?.addEventListener("input", (e) => {
+    pantryListSearchQuery = e.target instanceof HTMLInputElement ? e.target.value : "";
+    render();
+  });
+
   document.getElementById("pantryAddForm")?.addEventListener("submit", (e) => {
     e.preventDefault();
     const name = document.getElementById("pantryNewName")?.value?.trim();
@@ -2783,6 +3076,22 @@ function wireGlobalHandlers() {
       return;
     }
 
+    if (action === "daily-place-collapse") {
+      const dk = btn.getAttribute("data-date-key");
+      const id = btn.getAttribute("data-item-id");
+      if (!dk || !id) return;
+      const it = findDayJournalItem(dk, id);
+      if (!it || it.kind !== "place") return;
+      if (it.collapsed) {
+        delete it.collapsed;
+      } else {
+        it.collapsed = true;
+      }
+      saveDayJournal(dayJournal);
+      render();
+      return;
+    }
+
     if (action === "daily-edit") {
       const dk = btn.getAttribute("data-date-key");
       const id = btn.getAttribute("data-item-id");
@@ -2949,12 +3258,33 @@ function wireGlobalHandlers() {
     }
   });
 
+  document.getElementById("dailyTodayKind")?.addEventListener("change", () => {
+    syncDailyTodayFormPlaceSelect(dailyBrowseDateKey);
+  });
+
   document.getElementById("dailyTodayForm")?.addEventListener("submit", (e) => {
     e.preventDefault();
     const input = document.getElementById("dailyTodayInput");
     const t = String(input?.value ?? "").trim();
     if (!t) return;
-    addDayItem(dayJournal, dailyBrowseDateKey, uid("ditem"), t);
+    const kind = document.getElementById("dailyTodayKind")?.value === "place" ? "place" : "task";
+    const underRaw = document.getElementById("dailyTodayUnderPlace")?.value ?? "";
+    const newId = uid("ditem");
+    if (kind === "place") {
+      addDayItem(dayJournal, dailyBrowseDateKey, newId, t, { kind: "place" });
+      saveDayJournal(dayJournal);
+      input.value = "";
+      const kindEl = document.getElementById("dailyTodayKind");
+      if (kindEl) kindEl.value = "task";
+      const form = document.getElementById("dailyTodayForm");
+      if (form) form.dataset.selectPlaceAfterRender = newId;
+      toast("המקום נוסף. עכשיו באותה שורה: כתבי מה להביא — המקום כבר נבחר ברשימה האמצעית.");
+      render();
+      queueMicrotask(() => document.getElementById("dailyTodayInput")?.focus());
+      return;
+    }
+    const opts = underRaw ? { parentId: underRaw } : {};
+    addDayItem(dayJournal, dailyBrowseDateKey, newId, t, opts);
     saveDayJournal(dayJournal);
     input.value = "";
     render();

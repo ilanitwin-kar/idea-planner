@@ -439,10 +439,23 @@
               <button type="button" id="dailyDayNext" class="btn btn-ghost daily-day-nav-btn">יום אחרי</button>
             </div>
           </div>
-        <form id="dailyTodayForm" class="add-row daily-add" autocomplete="off">
-          <input id="dailyTodayInput" class="input" type="text" placeholder="משימה ליום הזה…" maxlength="200" />
+        <form id="dailyTodayForm" class="add-row daily-add daily-today-form" autocomplete="off">
+          <select id="dailyTodayKind" class="select daily-today-kind" aria-label="סוג שורה">
+            <option value="task">משימה / לקנות</option>
+            <option value="place">כותרת מקום (חנות, בית מרקחת…)</option>
+          </select>
+          <select id="dailyTodayUnderPlace" class="select daily-today-under hidden" aria-label="מה להביא מאיזה מקום">
+            <option value="">— ברשימה הראשית (לא תחת חנות) —</option>
+          </select>
+          <input id="dailyTodayInput" class="input" type="text" maxlength="200" placeholder="משימה או מה לקנות…" />
           <button class="btn" type="submit">הוספה</button>
         </form>
+        <p class="daily-today-hint">
+          <strong>קניות לפי מקום:</strong> בשלב ראשון בוחרים «כותרת מקום», כותבים את שם החנות (למשל מכבי פארם) ולוחצים «הוספה».
+          מיד אחרי זה הטופס עובר ל«משימה / לקנות» והמקום החדש כבר מסומן ברשימה האמצעית — שם רושמים <em>מה להביא</em> ושוב «הוספה».
+          כל פריט נוסף: אותו דבר (אפשר לבחור מקום אחר ברשימה האמצעית).
+          ליד כל כותרת מקום יש כפתור כיווץ (▾/▸). בלילה, רק מה שלא סומן V עובר ליום הבא — יחד עם כותרת המקום אם נשארו תחתיה משימות פתוחות.
+        </p>
         <div id="dailyTodayList" class="list daily-list" role="list"></div>
         <div id="dailyTodayProgress" class="daily-progress"></div>
         </div>
@@ -535,7 +548,26 @@
         </div>
         <div id="pantryFilterHint" class="pantry-filter-hint hidden" aria-live="polite"></div>
         <form id="pantryAddForm" class="pantry-add-form" autocomplete="off">
-          <input id="pantryNewName" class="input" type="text" maxlength="120" placeholder="שם המוצר…" aria-label="שם המוצר" />
+          <div class="pantry-name-field">
+            <input
+              id="pantryNewName"
+              class="input"
+              type="text"
+              maxlength="120"
+              placeholder="שם המוצר…"
+              aria-label="שם המוצר"
+              aria-autocomplete="list"
+              aria-controls="pantryNewNameSuggest"
+              aria-expanded="false"
+            />
+            <div
+              id="pantryNewNameSuggest"
+              class="pantry-suggest"
+              hidden
+              role="listbox"
+              aria-label="מוצרים קיימים במלאי"
+            ></div>
+          </div>
           <select id="pantryNewLoc" class="select" aria-label="מיקום">
             <option value="fridge">מקרר</option>
             <option value="pantry">מזווה</option>
@@ -547,6 +579,20 @@
           <button type="button" id="pantryImportOpenBtn" class="btn btn-ghost">ייבוא מקבלה / צילום</button>
           <button type="button" id="pantryBarcodeOpenBtn" class="btn btn-ghost">ברקוד מהאריזה</button>
         </form>
+        <div class="pantry-list-search">
+          <label class="pantry-search-line">
+            <span class="pantry-search-heading">חיפוש ברשימה</span>
+            <input
+              id="pantryListSearch"
+              class="input pantry-list-search-input"
+              type="search"
+              maxlength="120"
+              placeholder="חלק מהשם (אפשר כמה מילים)…"
+              aria-label="חיפוש מוצר ברשימת המלאי"
+              autocomplete="off"
+            />
+          </label>
+        </div>
         <div id="pantryListRoot" class="pantry-list" role="list"></div>
         <div id="pantrySummary" class="daily-progress"></div>
       </div>
