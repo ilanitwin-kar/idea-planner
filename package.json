@@ -17,6 +17,9 @@
     "vite": "^6.0.0"
   },
   "dependencies": {
-    "html2pdf.js": "^0.14.0"
+    "@zxing/browser": "^0.1.5",
+    "html2pdf.js": "^0.14.0",
+    "pdfjs-dist": "^5.7.284",
+    "tesseract.js": "^7.0.0"
   }
 }
