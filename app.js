@@ -17,7 +17,19 @@ import {
   stopDayItemTimer,
   cancelActiveTimer,
   timersMatch,
+  setAfterTimingPersist,
 } from "./daily-timing-log.js";
+import {
+  isCloudBackupConfigured,
+  initCloudBackup,
+  onCloudAuthChanged,
+  uploadCloudSnapshot,
+  fetchCloudSnapshot,
+  applyCloudSnapshotToLocalStorage,
+  signInCloudWithGoogle,
+  signOutCloud,
+  getCloudUser,
+} from "./cloud-backup.js";
 import {
   PANTRY_STORAGE_KEY,
   PANTRY_LOCATIONS,
@@ -317,13 +329,32 @@ function loadSettings() {
     const x = raw ? JSON.parse(raw) : null;
     return {
       defaultCalMode: x?.defaultCalMode === "day" || x?.defaultCalMode === "month" ? x.defaultCalMode : "week",
+      cloudAutoBackup: x?.cloudAutoBackup === true,
     };
   } catch {
-    return { defaultCalMode: "week" };
+    return { defaultCalMode: "week", cloudAutoBackup: false };
   }
 }
 function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+const tryCloudAutoBackup = debounce(CLOUD_DEBOUNCE_MS, async () => {
+  if (!settings.cloudAutoBackup) return;
+  if (!isCloudBackupConfigured()) return;
+  const inited = initCloudBackup();
+  if (!inited.ok) return;
+  const user = getCloudUser();
+  if (!user) return;
+  try {
+    await uploadCloudSnapshot(user.uid);
+  } catch (e) {
+    console.error(e);
+  }
+});
+
+function scheduleCloudBackupIfEnabled() {
+  tryCloudAutoBackup();
 }
 
 const APP_MODE_KEY = "idea-planner:app-mode:v1";
@@ -388,6 +419,12 @@ function inferLastKnownCalendarDayFromJournal(journal, todayKey) {
 
 let appMode = loadAppMode();
 let dayJournal = loadDayJournal();
+
+function persistDayJournal() {
+  saveDayJournal(dayJournal);
+  scheduleCloudBackupIfEnabled();
+}
+
 let timingState = loadTimingState();
 let pantryState = loadPantry();
 /** סינון מלאי: `all` או מזהה מיקום (fridge / pantry / freezer) */
@@ -477,7 +514,7 @@ function maybeRollDailyJournalAtMidnight() {
   }
   lastKnownCalendarDayKey = today;
   dailyBrowseDateKey = today;
-  saveDayJournal(dayJournal);
+  persistDayJournal();
   persistLastKnownCalendarDay();
 }
 
@@ -1767,6 +1804,7 @@ function persistAndRender() {
   ensureSelection();
   saveState(state);
   render();
+  scheduleCloudBackupIfEnabled();
 }
 
 function startOfDay(d) {
@@ -2707,7 +2745,65 @@ function wireDailyTimerDialog() {
   });
 }
 
+function refreshCloudBackupPanel() {
+  const noCfg = document.getElementById("cloudBackupNoConfig");
+  const panel = document.getElementById("cloudBackupPanel");
+  const userLine = document.getElementById("cloudBackupUserLine");
+  const hint = document.getElementById("cloudBackupHint");
+  const signIn = document.getElementById("cloudSignInBtn");
+  const signOut = document.getElementById("cloudSignOutBtn");
+  const backupNow = document.getElementById("cloudBackupNowBtn");
+  const restore = document.getElementById("cloudRestoreBtn");
+  if (!noCfg || !panel || !userLine) return;
+
+  panel.classList.remove("hidden");
+
+  if (!isCloudBackupConfigured()) {
+    noCfg.classList.remove("hidden");
+    userLine.textContent =
+      "כפתורי ההתחברות למטה יופעלו אחרי שמשתני ‎VITE_FIREBASE_*‎ ייטענו (ראי ההסבר המודגש).";
+    signIn?.classList.remove("hidden");
+    signOut?.classList.add("hidden");
+    if (signIn) {
+      signIn.disabled = true;
+      signIn.removeAttribute("title");
+    }
+    if (signOut) signOut.disabled = true;
+    if (backupNow) backupNow.disabled = true;
+    if (restore) restore.disabled = true;
+    if (hint) hint.textContent = "";
+    return;
+  }
+
+  noCfg.classList.add("hidden");
+  if (signIn) signIn.disabled = false;
+
+  initCloudBackup();
+  const user = getCloudUser();
+  if (user) {
+    userLine.textContent = `מחוברת: ${user.email || user.displayName || user.uid}`;
+    signIn?.classList.add("hidden");
+    signOut?.classList.remove("hidden");
+    if (signOut) signOut.disabled = false;
+    if (backupNow) backupNow.disabled = false;
+    if (restore) restore.disabled = false;
+  } else {
+    userLine.textContent = "לא מחוברת — לחצי «התחברות Google» כדי לגבות או לשחזר.";
+    signIn?.classList.remove("hidden");
+    signOut?.classList.add("hidden");
+    if (backupNow) backupNow.disabled = true;
+    if (restore) restore.disabled = true;
+  }
+  if (hint) hint.textContent = "";
+}
+
 function wireGlobalHandlers() {
+  if (isCloudBackupConfigured()) {
+    const r = initCloudBackup();
+    if (r.ok) onCloudAuthChanged(() => refreshCloudBackupPanel());
+  }
+  setAfterTimingPersist(() => scheduleCloudBackupIfEnabled());
+
   const topMenuToggle = document.getElementById("topMenuToggle");
   const topMenuDialog = document.getElementById("topMenuDialog");
   if (topMenuToggle && topMenuDialog instanceof HTMLDialogElement) {
@@ -2764,19 +2860,90 @@ function wireGlobalHandlers() {
   const settingsSave = document.getElementById("settingsSave");
 
   if (settingsBtn && settingsDialog && setDefaultCalMode && settingsSave) {
+    const cloudAutoBackupEl = document.getElementById("cloudAutoBackup");
+    const cloudSignInBtn = document.getElementById("cloudSignInBtn");
+    const cloudSignOutBtn = document.getElementById("cloudSignOutBtn");
+    const cloudBackupNowBtn = document.getElementById("cloudBackupNowBtn");
+    const cloudRestoreBtn = document.getElementById("cloudRestoreBtn");
+
     settingsBtn.addEventListener("click", () => {
       setDefaultCalMode.value = settings.defaultCalMode;
+      if (cloudAutoBackupEl) cloudAutoBackupEl.checked = settings.cloudAutoBackup;
+      refreshCloudBackupPanel();
       settingsDialog.showModal();
     });
 
     settingsSave.addEventListener("click", () => {
       settings.defaultCalMode = String(setDefaultCalMode.value ?? "week");
+      settings.cloudAutoBackup = !!(cloudAutoBackupEl && cloudAutoBackupEl.checked);
       saveSettings();
       ui.calMode = settings.defaultCalMode;
 
       settingsDialog.close();
       toast("ההגדרות נשמרו.");
       persistAndRender();
+    });
+
+    cloudSignInBtn?.addEventListener("click", async () => {
+      try {
+        await signInCloudWithGoogle();
+        refreshCloudBackupPanel();
+        toast("התחברת בהצלחה.");
+      } catch (e) {
+        console.error(e);
+        toast("התחברות נכשלה. בדקי חוסם חלונות או הגדרות Firebase (Google provider, דומיין מאושר).");
+      }
+    });
+
+    cloudSignOutBtn?.addEventListener("click", async () => {
+      try {
+        await signOutCloud();
+        refreshCloudBackupPanel();
+        toast("התנתקת מהענן.");
+      } catch (e) {
+        console.error(e);
+        toast("התנתקות נכשלה.");
+      }
+    });
+
+    cloudBackupNowBtn?.addEventListener("click", async () => {
+      const user = getCloudUser();
+      if (!user) {
+        toast("נא להתחבר קודם.");
+        return;
+      }
+      try {
+        await uploadCloudSnapshot(user.uid);
+        toast("הגיבוי הועלה לענן.");
+      } catch (e) {
+        console.error(e);
+        toast("העלאת גיבוי נכשלה (בדקי חיבור וכללי אבטחה ב-Firestore).");
+      }
+    });
+
+    cloudRestoreBtn?.addEventListener("click", async () => {
+      const user = getCloudUser();
+      if (!user) {
+        toast("נא להתחבר קודם.");
+        return;
+      }
+      const ok = confirm(
+        "שחזור מהענן יחליף את כל הנתונים המקומיים (רעיונות, יומן, מלאי, תזמון, הגדרות) בגרסה מהענן.\n\nלהמשיך?",
+      );
+      if (!ok) return;
+      try {
+        const data = await fetchCloudSnapshot(user.uid);
+        if (!data?.keys || typeof data.keys !== "object") {
+          toast("בענן אין גיבוי עדיין. לחצי קודם «גיבוי עכשיו».");
+          return;
+        }
+        applyCloudSnapshotToLocalStorage(data);
+        toast("הנתונים שוחזרו. הדף ייטען מחדש…");
+        setTimeout(() => location.reload(), 400);
+      } catch (e) {
+        console.error(e);
+        toast("שחזור נכשל. בדקי הרשאות וחיבור.");
+      }
     });
   }
 
@@ -3071,7 +3238,7 @@ function wireGlobalHandlers() {
         cancelActiveTimer(timingState);
       }
       deleteDayItem(dayJournal, dk, id);
-      saveDayJournal(dayJournal);
+      persistDayJournal();
       render();
       return;
     }
@@ -3087,7 +3254,7 @@ function wireGlobalHandlers() {
       } else {
         it.collapsed = true;
       }
-      saveDayJournal(dayJournal);
+      persistDayJournal();
       render();
       return;
     }
@@ -3223,7 +3390,7 @@ function wireGlobalHandlers() {
       const id = el.getAttribute("data-item-id");
       if (!dk || !id) return;
       toggleDayItem(dayJournal, dk, id);
-      saveDayJournal(dayJournal);
+      persistDayJournal();
       render();
       return;
     }
@@ -3272,7 +3439,7 @@ function wireGlobalHandlers() {
     const newId = uid("ditem");
     if (kind === "place") {
       addDayItem(dayJournal, dailyBrowseDateKey, newId, t, { kind: "place" });
-      saveDayJournal(dayJournal);
+      persistDayJournal();
       input.value = "";
       const kindEl = document.getElementById("dailyTodayKind");
       if (kindEl) kindEl.value = "task";
@@ -3285,7 +3452,7 @@ function wireGlobalHandlers() {
     }
     const opts = underRaw ? { parentId: underRaw } : {};
     addDayItem(dayJournal, dailyBrowseDateKey, newId, t, opts);
-    saveDayJournal(dayJournal);
+    persistDayJournal();
     input.value = "";
     render();
   });
@@ -3383,7 +3550,7 @@ function wireGlobalHandlers() {
       return;
     }
     updateDayItemTitle(dayJournal, dk, id, t);
-    saveDayJournal(dayJournal);
+    persistDayJournal();
     dlg?.close();
     render();
   });

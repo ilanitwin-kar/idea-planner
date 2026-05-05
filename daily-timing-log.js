@@ -46,9 +46,20 @@ export function loadTimingState() {
   }
 }
 
+let afterTimingPersist = null;
+/** @param {null | (() => void)} cb */
+export function setAfterTimingPersist(cb) {
+  afterTimingPersist = typeof cb === "function" ? cb : null;
+}
+
 export function saveTimingState(state) {
   try {
     localStorage.setItem(TIMING_LOG_KEY, JSON.stringify(state));
+  } catch {
+    /* ignore */
+  }
+  try {
+    afterTimingPersist?.();
   } catch {
     /* ignore */
   }

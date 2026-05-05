@@ -1563,6 +1563,9 @@ body{
   line-height: 1.55;
   margin-bottom: 10px;
 }
+.dialog-text--tight{
+  margin-bottom: 6px;
+}
 .dialog-grid{
   display:grid;
   grid-template-columns: 1fr 1fr;
@@ -1582,6 +1585,17 @@ body{
   color: var(--muted2);
   font-size: 0.95rem;
   line-height: 1.45;
+}
+.cloud-backup-no-env{
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn, #b45309) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn, #b45309) 35%, transparent);
+  color: var(--text, inherit);
+}
+.cloud-backup-panel .btn:disabled{
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .checkline{
