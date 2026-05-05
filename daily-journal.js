@@ -42,22 +42,39 @@ export function ensureDay(journal, dateKey) {
   return day;
 }
 
-export function addDayItem(journal, dateKey, id, title) {
+/**
+ * @param {{ kind?: "place", parentId?: string }} [options]
+ */
+export function addDayItem(journal, dateKey, id, title, options = {}) {
   const day = ensureDay(journal, dateKey);
-  day.items.push({ id, title: String(title ?? "").trim(), done: false });
+  const item = { id, title: String(title ?? "").trim(), done: false };
+  if (options.kind === "place") {
+    item.kind = "place";
+    if (options.collapsed === true) item.collapsed = true;
+  }
+  if (options.parentId) item.parentId = options.parentId;
+  day.items.push(item);
 }
 
 export function toggleDayItem(journal, dateKey, itemId) {
   const day = journal.days[dateKey];
   if (!day?.items) return;
   const it = day.items.find((x) => x.id === itemId);
-  if (it) it.done = !it.done;
+  if (!it || it.kind === "place") return;
+  it.done = !it.done;
 }
 
 export function deleteDayItem(journal, dateKey, itemId) {
   const day = journal.days[dateKey];
   if (!day?.items) return;
-  day.items = day.items.filter((x) => x.id !== itemId);
+  const toRemove = new Set([itemId]);
+  const it = day.items.find((x) => x.id === itemId);
+  if (it?.kind === "place") {
+    for (const x of day.items) {
+      if (x.parentId === itemId) toRemove.add(x.id);
+    }
+  }
+  day.items = day.items.filter((x) => !toRemove.has(x.id));
   if (day.items.length === 0) delete journal.days[dateKey];
 }
 
@@ -90,6 +107,7 @@ export function futureDayKeysWithItems(journal, todayKey) {
 
 export function dayProgress(journal, dateKey) {
   const items = journal.days[dateKey]?.items ?? [];
-  const done = items.filter((x) => x.done).length;
-  return { total: items.length, done };
+  const countable = items.filter((x) => x.kind !== "place");
+  const done = countable.filter((x) => x.done).length;
+  return { total: countable.length, done };
 }
