@@ -4,6 +4,7 @@ dist
 .env.local
 .DS_Store
 server/.env
+server/.env.txt
 server/vapid.json
 server/public
 
