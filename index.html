@@ -105,7 +105,7 @@
             הנתונים נשמרים אצלך בדפדפן. אפשר להעלות עותק ל-Firestore תחת חשבון Google — בלי שינוי אוטומטי במכשיר (רק בלחיצה על «שחזור»).
           </p>
           <p id="cloudBackupNoConfig" class="dialog-hint cloud-backup-no-env hidden">
-            לא הוגדרו משתני Vite ל-Firebase. צרי קובץ ‎.env.local‎ בשורש הפרויקט (ליד ‎package.json‎) לפי ‎.env.example‎, מלאי את הערכים מהקונסולה, ואז <strong>עצרי והפעילי מחדש</strong> את ‎npm run dev‎.
+            אין תצורת Firebase באפליקציה. <strong>בפיתוח:</strong> קובץ ‎.env.local‎ בשורש הפרויקט (לפי ‎.env.example‎) והפעלה מחדש של ‎npm run dev‎. <strong>ב־Vercel:</strong> Settings → Environment Variables — הוסיפי ‎FIREBASE_API_KEY‎, ‎FIREBASE_AUTH_DOMAIN‎, ‎FIREBASE_PROJECT_ID‎, ‎FIREBASE_APP_ID‎ (או אותם שמות עם ‎VITE_‎), סמני Production, ואז <strong>Redeploy</strong> (הערכים נכנסים בזמן build).
           </p>
           <div id="cloudBackupPanel" class="cloud-backup-panel">
             <p id="cloudBackupUserLine" class="dialog-text dialog-text--tight">—</p>

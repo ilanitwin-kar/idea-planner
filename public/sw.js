@@ -1,4 +1,4 @@
-const CACHE = "idea-planner-cache-v11";
+const CACHE = "idea-planner-cache-v12";
 
 /** קבצים שקיימים תמיד אחרי build — בלי נתיבי hashed שלא ייכשלו ב־addAll */
 const PRECACHE = [
@@ -40,6 +40,12 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
+  const path = new URL(req.url).pathname;
+  /* API דינמי — לא שומרים במטמון (אחרת 404 ישן מ־/api/firebase-config ננעל עד ניקוי מלא) */
+  if (path.startsWith("/api/")) {
+    event.respondWith(fetch(req));
+    return;
+  }
   event.respondWith(
     fetch(req)
       .then((res) => {
