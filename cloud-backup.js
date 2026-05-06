@@ -6,6 +6,8 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
 } from "firebase/auth";
@@ -24,7 +26,10 @@ export const CLOUD_SNAPSHOT_STORAGE_KEYS = [
 
 const SNAPSHOT_VERSION = 1;
 
-function readFirebaseConfigFromEnv() {
+/** תצורה שהורדה משרת הפרודקשן (בלי Vite בזמן build) */
+let runtimeInjectedConfig = null;
+
+function buildConfigFromViteEnv() {
   const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
   const authDomain = import.meta.env.VITE_FIREBASE_AUTH_DOMAIN;
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
@@ -38,6 +43,59 @@ function readFirebaseConfigFromEnv() {
     storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || undefined,
     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || undefined,
   };
+}
+
+function readFirebaseConfigFromEnv() {
+  if (runtimeInjectedConfig) return runtimeInjectedConfig;
+  return buildConfigFromViteEnv();
+}
+
+/**
+ * בפרודקשן לעיתים אין VITE_* בזמן build — אז טוענים מ־GET /api/firebase-config (אותו דומיין).
+ */
+export async function loadFirebaseConfigIfNeeded() {
+  if (buildConfigFromViteEnv()) return true;
+  if (runtimeInjectedConfig) return true;
+  try {
+    const r = await fetch("/api/firebase-config", { credentials: "same-origin" });
+    if (!r.ok) return false;
+    const j = await r.json();
+    if (j?.apiKey && j?.authDomain && j?.projectId && j?.appId) {
+      runtimeInjectedConfig = {
+        apiKey: String(j.apiKey),
+        authDomain: String(j.authDomain),
+        projectId: String(j.projectId),
+        appId: String(j.appId),
+        storageBucket: j.storageBucket ? String(j.storageBucket) : undefined,
+        messagingSenderId: j.messagingSenderId ? String(j.messagingSenderId) : undefined,
+      };
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+/** אתחול מאזין + השלמת התחברות redirect אחרי חזרה מגוגל */
+export async function setupCloudBackupListeners(onUserChange) {
+  await loadFirebaseConfigIfNeeded();
+  if (!isCloudBackupConfigured()) {
+    onUserChange?.();
+    return;
+  }
+  const r = initCloudBackup();
+  if (!r.ok) {
+    onUserChange?.();
+    return;
+  }
+  try {
+    await getRedirectResult(authRef);
+  } catch (e) {
+    console.error(e);
+  }
+  onCloudAuthChanged(onUserChange);
+  onUserChange?.();
 }
 
 let appRef = null;
@@ -123,7 +181,17 @@ export async function signInCloudWithGoogle() {
   const r = initCloudBackup();
   if (!r.ok) throw new Error("Firebase לא מוגדר");
   const provider = new GoogleAuthProvider();
-  await signInWithPopup(authRef, provider);
+  try {
+    await signInWithPopup(authRef, provider);
+  } catch (e) {
+    const code = e?.code ?? "";
+    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") throw e;
+    if (code === "auth/popup-blocked" || code === "auth/operation-not-supported-in-this-environment") {
+      await signInWithRedirect(authRef, provider);
+      return;
+    }
+    throw e;
+  }
 }
 
 export async function signOutCloud() {

@@ -22,7 +22,7 @@ import {
 import {
   isCloudBackupConfigured,
   initCloudBackup,
-  onCloudAuthChanged,
+  setupCloudBackupListeners,
   uploadCloudSnapshot,
   fetchCloudSnapshot,
   applyCloudSnapshotToLocalStorage,
@@ -2798,10 +2798,6 @@ function refreshCloudBackupPanel() {
 }
 
 function wireGlobalHandlers() {
-  if (isCloudBackupConfigured()) {
-    const r = initCloudBackup();
-    if (r.ok) onCloudAuthChanged(() => refreshCloudBackupPanel());
-  }
   setAfterTimingPersist(() => scheduleCloudBackupIfEnabled());
 
   const topMenuToggle = document.getElementById("topMenuToggle");
@@ -3597,15 +3593,25 @@ function render() {
   applyMobileLayout();
 }
 
-ensureSelection();
-wireGlobalHandlers();
+async function boot() {
+  ensureSelection();
+  await setupCloudBackupListeners(() => refreshCloudBackupPanel());
+  wireGlobalHandlers();
 
-setInterval(() => {
-  if (localDateKey() !== lastKnownCalendarDayKey) render();
-}, 60_000);
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") render();
+  setInterval(() => {
+    if (localDateKey() !== lastKnownCalendarDayKey) render();
+  }, 60_000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") render();
+  });
+
+  persistAndRender();
+}
+
+boot().catch((err) => {
+  console.error(err);
+  ensureSelection();
+  wireGlobalHandlers();
+  persistAndRender();
 });
-
-persistAndRender();
 

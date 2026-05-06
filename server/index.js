@@ -159,6 +159,27 @@ app.get("/debug/reminders", async (req, res) => {
   res.json({ reminders: rows });
 });
 
+/** תצורת Firebase לצד לקוח בפרודקשן (כמו ב-Vite — לא סוד). מאפשר build בלי VITE_* וטעינה בזמן ריצה. */
+app.get("/api/firebase-config", (req, res) => {
+  const apiKey = env("FIREBASE_API_KEY") || env("VITE_FIREBASE_API_KEY");
+  const authDomain = env("FIREBASE_AUTH_DOMAIN") || env("VITE_FIREBASE_AUTH_DOMAIN");
+  const projectId = env("FIREBASE_PROJECT_ID") || env("VITE_FIREBASE_PROJECT_ID");
+  const appId = env("FIREBASE_APP_ID") || env("VITE_FIREBASE_APP_ID");
+  const storageBucket = env("FIREBASE_STORAGE_BUCKET") || env("VITE_FIREBASE_STORAGE_BUCKET");
+  const messagingSenderId = env("FIREBASE_MESSAGING_SENDER_ID") || env("VITE_FIREBASE_MESSAGING_SENDER_ID");
+  if (!apiKey || !authDomain || !projectId || !appId) {
+    return res.status(404).json({ ok: false, error: "firebase_env_missing" });
+  }
+  res.json({
+    apiKey,
+    authDomain,
+    projectId,
+    appId,
+    ...(storageBucket ? { storageBucket } : {}),
+    ...(messagingSenderId ? { messagingSenderId } : {}),
+  });
+});
+
 // Serve built web app (after `npm run build`)
 const publicDir = path.resolve(__dirname, "public");
 app.use(express.static(publicDir));
