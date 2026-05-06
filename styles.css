@@ -1566,6 +1566,33 @@ body{
 .dialog-text--tight{
   margin-bottom: 6px;
 }
+
+.help-collapsible{
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+}
+.help-collapsible.panel-hint{
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.help-collapsible-summary{
+  cursor: pointer;
+  user-select: none;
+  color: var(--muted2);
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+.help-collapsible[open] > .help-collapsible-summary{
+  color: var(--heading);
+}
+.help-collapsible-body{
+  margin-top: 6px;
+}
 .dialog-grid{
   display:grid;
   grid-template-columns: 1fr 1fr;

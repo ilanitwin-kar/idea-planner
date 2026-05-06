@@ -175,9 +175,12 @@
     <dialog id="pantryImportDialog" class="dialog dialog--wide">
       <div class="dialog-inner">
         <div class="dialog-title">ייבוא למלאי מקבלה / צילום</div>
-        <p id="pantryImportStatus" class="dialog-text">
-          ניתן להעלות PDF (למשל תעודת משלוח) או תמונה (צילום מסך מהאתר). התוצאות לבדיקה לפני שמירה.
-        </p>
+        <details class="help-collapsible">
+          <summary class="help-collapsible-summary">הסבר</summary>
+          <p id="pantryImportStatus" class="dialog-text dialog-text--tight">
+            ניתן להעלות PDF (למשל תעודת משלוח) או תמונה (צילום מסך מהאתר). התוצאות לבדיקה לפני שמירה.
+          </p>
+        </details>
         <input
           type="file"
           id="pantryImportFile"
@@ -223,11 +226,14 @@
     <dialog id="pantryBarcodeDialog" class="dialog dialog--wide">
       <div class="dialog-inner">
         <div class="dialog-title">הוספה לפי ברקוד</div>
-        <p class="dialog-text pantry-bc-hint">
-          כוונו את המצלמה אל הברקוד על האריזה, או הקלידי את המספר מהאריזה ולחצו «חיפוש שם». השם מגיע מ־
-          <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>
-          (אינטרנט) — לא תמיד קיים או בעברית; אפשר לערוך לפני השמירה. הכמות תמיד שלכם.
-        </p>
+        <details class="help-collapsible">
+          <summary class="help-collapsible-summary">הסבר</summary>
+          <p class="dialog-text pantry-bc-hint dialog-text--tight">
+            כוונו את המצלמה אל הברקוד על האריזה, או הקלידי את המספר מהאריזה ולחצו «חיפוש שם». השם מגיע מ־
+            <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>
+            (אינטרנט) — לא תמיד קיים או בעברית; אפשר לערוך לפני השמירה. הכמות תמיד שלכם.
+          </p>
+        </details>
         <div id="pantryBarcodeVideoWrap" class="pantry-bc-video-wrap hidden">
           <video id="pantryBarcodeVideo" class="pantry-bc-video" playsinline muted></video>
         </div>
@@ -310,7 +316,12 @@
       <aside class="panel ideas-panel" aria-label="רעיונות">
         <div class="panel-header">
           <div class="panel-title">רעיונות</div>
-          <div class="panel-hint">בחרי רעיון כדי לבנות אסטרטגיה ומשימות.</div>
+          <details class="help-collapsible panel-hint">
+            <summary class="help-collapsible-summary">הסבר</summary>
+            <div class="help-collapsible-body">
+              <div class="dialog-text dialog-text--tight">בחרי רעיון כדי לבנות אסטרטגיה ומשימות.</div>
+            </div>
+          </details>
         </div>
 
         <div id="homeSummary" class="home-summary" aria-label="סיכום">
@@ -404,7 +415,12 @@
         <div id="calendarView" class="hidden" role="tabpanel" aria-label="לוח שנה">
           <div class="panel-header">
             <div class="panel-title">לוח שנה</div>
-            <div class="panel-hint">כל תתי־המשימות מכל הרעיונות מרוכזות לפי זמן.</div>
+            <details class="help-collapsible panel-hint">
+              <summary class="help-collapsible-summary">הסבר</summary>
+              <div class="help-collapsible-body">
+                <div class="dialog-text dialog-text--tight">כל תתי־המשימות מכל הרעיונות מרוכזות לפי זמן.</div>
+              </div>
+            </details>
           </div>
 
           <div class="calendar-controls">
@@ -439,7 +455,12 @@
         <div id="tasksView" class="hidden" role="tabpanel" aria-label="רשימת תתי משימות">
           <div class="panel-header">
             <div class="panel-title">רשימת תתי משימות</div>
-            <div class="panel-hint">כאן רואים לפי משימה את כל תתי־המשימות שלה (עם תאריך/שעה) ומסמנים ✓ כשבוצע.</div>
+            <details class="help-collapsible panel-hint">
+              <summary class="help-collapsible-summary">הסבר</summary>
+              <div class="help-collapsible-body">
+                <div class="dialog-text dialog-text--tight">כאן רואים לפי משימה את כל תתי־המשימות שלה (עם תאריך/שעה) ומסמנים ✓ כשבוצע.</div>
+              </div>
+            </details>
           </div>
           <div class="section">
             <input id="tasksSearch" class="input" type="text" placeholder="חיפוש…" />
@@ -473,12 +494,17 @@
           <input id="dailyTodayInput" class="input" type="text" maxlength="200" placeholder="משימה או מה לקנות…" />
           <button class="btn" type="submit">הוספה</button>
         </form>
-        <p class="daily-today-hint">
-          <strong>קניות לפי מקום:</strong> בשלב ראשון בוחרים «כותרת מקום», כותבים את שם החנות (למשל מכבי פארם) ולוחצים «הוספה».
-          מיד אחרי זה הטופס עובר ל«משימה / לקנות» והמקום החדש כבר מסומן ברשימה האמצעית — שם רושמים <em>מה להביא</em> ושוב «הוספה».
-          כל פריט נוסף: אותו דבר (אפשר לבחור מקום אחר ברשימה האמצעית).
-          ליד כל כותרת מקום יש כפתור כיווץ (▾/▸). בלילה, רק מה שלא סומן V עובר ליום הבא — יחד עם כותרת המקום אם נשארו תחתיה משימות פתוחות.
-        </p>
+        <details class="help-collapsible daily-today-hint">
+          <summary class="help-collapsible-summary">הסבר: קניות לפי מקום</summary>
+          <div class="help-collapsible-body">
+            <p class="dialog-text dialog-text--tight">
+              <strong>קניות לפי מקום:</strong> בשלב ראשון בוחרים «כותרת מקום», כותבים את שם החנות (למשל מכבי פארם) ולוחצים «הוספה».
+              מיד אחרי זה הטופס עובר ל«משימה / לקנות» והמקום החדש כבר מסומן ברשימה האמצעית — שם רושמים <em>מה להביא</em> ושוב «הוספה».
+              כל פריט נוסף: אותו דבר (אפשר לבחור מקום אחר ברשימה האמצעית).
+              ליד כל כותרת מקום יש כפתור כיווץ (▾/▸). בלילה, רק מה שלא סומן V עובר ליום הבא — יחד עם כותרת המקום אם נשארו תחתיה משימות פתוחות.
+            </p>
+          </div>
+        </details>
         <div id="dailyTodayList" class="list daily-list" role="list"></div>
         <div id="dailyTodayProgress" class="daily-progress"></div>
         </div>
@@ -489,7 +515,12 @@
       <div class="daily-inner">
         <div class="panel-header daily-header">
           <div class="panel-title">משימות היום</div>
-          <div class="panel-hint">כל מה שמתוזמן להיום (מהרעיונות) + משימות “היום שלי”.</div>
+          <details class="help-collapsible panel-hint">
+            <summary class="help-collapsible-summary">הסבר</summary>
+            <div class="help-collapsible-body">
+              <div class="dialog-text dialog-text--tight">כל מה שמתוזמן להיום (מהרעיונות) + משימות “היום שלי”.</div>
+            </div>
+          </details>
         </div>
         <div class="today-tasks-root">
           <div class="today-tasks-section">
@@ -546,7 +577,12 @@
       <div class="daily-inner">
         <div class="panel-header daily-header">
           <div class="panel-title">תזמון</div>
-          <div class="panel-hint">מדידות ממשימות «היום שלי» — כמה זמן כל משימה לקחה בפועל (שימושי לתכנון בהמשך).</div>
+          <details class="help-collapsible panel-hint">
+            <summary class="help-collapsible-summary">הסבר</summary>
+            <div class="help-collapsible-body">
+              <div class="dialog-text dialog-text--tight">מדידות ממשימות «היום שלי» — כמה זמן כל משימה לקחה בפועל (שימושי לתכנון בהמשך).</div>
+            </div>
+          </details>
         </div>
         <div id="dailyTimingList" class="timing-list" role="list"></div>
       </div>
@@ -556,7 +592,12 @@
       <div class="daily-inner">
         <div class="panel-header daily-header">
           <div class="panel-title">מלאי בית</div>
-          <div class="panel-hint">רשימת מזון שיש בבית — «השתמשתי» מורידה יחידה מהמלאי. «ייבוא מקבלה / צילום»: PDF תעודת משלוח או תמונת מסך מהאתר (OCR). תמיד בדקי את הטבלה לפני שמירה.</div>
+          <details class="help-collapsible panel-hint">
+            <summary class="help-collapsible-summary">הסבר</summary>
+            <div class="help-collapsible-body">
+              <div class="dialog-text dialog-text--tight">רשימת מזון שיש בבית — «השתמשתי» מורידה יחידה מהמלאי. «ייבוא מקבלה / צילום»: PDF תעודת משלוח או תמונת מסך מהאתר (OCR). תמיד בדקי את הטבלה לפני שמירה.</div>
+            </div>
+          </details>
         </div>
         <div class="pantry-toolbar">
           <div id="pantryFilterBar" class="pantry-filters" role="tablist" aria-label="סינון לפי מיקום"></div>
