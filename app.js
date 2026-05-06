@@ -339,6 +339,27 @@ function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
+let cloudBackupUi = {
+  status: "idle", // idle | working | ok | error
+  message: "",
+  lastOkAtIso: null,
+};
+
+function cloudTimeShort(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+}
+
+function setCloudBackupHint(status, message, lastOkAtIso = cloudBackupUi.lastOkAtIso) {
+  cloudBackupUi.status = status;
+  cloudBackupUi.message = message || "";
+  cloudBackupUi.lastOkAtIso = lastOkAtIso ?? null;
+  const hint = document.getElementById("cloudBackupHint");
+  if (hint) hint.textContent = cloudBackupUi.message;
+}
+
 const tryCloudAutoBackup = debounce(CLOUD_DEBOUNCE_MS, async () => {
   if (!settings.cloudAutoBackup) return;
   if (!isCloudBackupConfigured()) return;
@@ -347,9 +368,13 @@ const tryCloudAutoBackup = debounce(CLOUD_DEBOUNCE_MS, async () => {
   const user = getCloudUser();
   if (!user) return;
   try {
+    setCloudBackupHint("working", "מגבה אוטומטית…");
     await uploadCloudSnapshot(user.uid);
+    const nowIso = new Date().toISOString();
+    setCloudBackupHint("ok", `גיבוי אוטומטי הועלה ב־${cloudTimeShort(nowIso)}`, nowIso);
   } catch (e) {
     console.error(e);
+    setCloudBackupHint("error", "גיבוי אוטומטי נכשל (בדקי חיבור / הרשאות).");
   }
 });
 
@@ -2794,7 +2819,7 @@ function refreshCloudBackupPanel() {
     if (backupNow) backupNow.disabled = true;
     if (restore) restore.disabled = true;
   }
-  if (hint) hint.textContent = "";
+  if (hint) hint.textContent = cloudBackupUi.message || "";
 }
 
 function wireGlobalHandlers() {
@@ -2908,11 +2933,15 @@ function wireGlobalHandlers() {
         toast("נא להתחבר קודם.");
         return;
       }
+      setCloudBackupHint("working", "מגבה…");
       try {
         await uploadCloudSnapshot(user.uid);
+        const nowIso = new Date().toISOString();
+        setCloudBackupHint("ok", `גיבוי הועלה ב־${cloudTimeShort(nowIso)}`, nowIso);
         toast("הגיבוי הועלה לענן.");
       } catch (e) {
         console.error(e);
+        setCloudBackupHint("error", "העלאת גיבוי נכשלה (בדקי חיבור וכללי אבטחה ב-Firestore).");
         toast("העלאת גיבוי נכשלה (בדקי חיבור וכללי אבטחה ב-Firestore).");
       }
     });
