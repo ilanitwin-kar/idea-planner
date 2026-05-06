@@ -30,6 +30,31 @@ const SNAPSHOT_VERSION = 1;
 let runtimeInjectedConfig = null;
 
 function buildConfigFromViteEnv() {
+  try {
+    const raw = /** @type {unknown} */ (__FIREBASE_PUBLIC_CONFIG__);
+    if (typeof raw === "string" && raw.length > 2) {
+      const injected = JSON.parse(raw);
+      if (
+        injected &&
+        injected.apiKey &&
+        injected.authDomain &&
+        injected.projectId &&
+        injected.appId
+      ) {
+        return {
+          apiKey: String(injected.apiKey),
+          authDomain: String(injected.authDomain),
+          projectId: String(injected.projectId),
+          appId: String(injected.appId),
+          storageBucket: injected.storageBucket ? String(injected.storageBucket) : undefined,
+          messagingSenderId: injected.messagingSenderId ? String(injected.messagingSenderId) : undefined,
+        };
+      }
+    }
+  } catch {
+    /* מקור ישן / בלי define */
+  }
+
   const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
   const authDomain = import.meta.env.VITE_FIREBASE_AUTH_DOMAIN;
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
@@ -57,7 +82,10 @@ export async function loadFirebaseConfigIfNeeded() {
   if (buildConfigFromViteEnv()) return true;
   if (runtimeInjectedConfig) return true;
   try {
-    const r = await fetch("/api/firebase-config", { credentials: "same-origin" });
+    const r = await fetch("/api/firebase-config", {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
     if (!r.ok) return false;
     const j = await r.json();
     if (j?.apiKey && j?.authDomain && j?.projectId && j?.appId) {
