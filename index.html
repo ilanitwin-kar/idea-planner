@@ -649,6 +649,25 @@
       </form>
     </dialog>
 
+    <dialog id="lunchTextEditDialog" class="dialog">
+      <form method="dialog" class="dialog-inner" id="lunchTextEditForm">
+        <div class="dialog-title" id="lunchTextEditHeading">עריכה</div>
+        <input
+          id="lunchTextEditInput"
+          class="input"
+          type="text"
+          maxlength="120"
+          list="lunchTextEditDishList"
+          autocomplete="off"
+        />
+        <datalist id="lunchTextEditDishList"></datalist>
+        <div class="dialog-actions">
+          <button id="lunchTextEditSave" class="btn" type="button">שמירה</button>
+          <button class="btn btn-ghost" value="cancel" type="submit">ביטול</button>
+        </div>
+      </form>
+    </dialog>
+
     <section id="viewLunchPlanner" class="daily-page hidden" aria-label="תכנון צהריים">
       <div class="daily-inner">
         <div class="panel-header daily-header">

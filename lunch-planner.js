@@ -154,6 +154,48 @@ export function removeHomeStockItem(state, category, itemId) {
   state.homeStock[category] = state.homeStock[category].filter((x) => x.id !== itemId);
 }
 
+export function updateHomeStockItem(state, category, itemId, nameRaw) {
+  if (!LUNCH_STOCK_CATEGORIES.includes(category)) return false;
+  const n = String(nameRaw ?? "").trim();
+  if (!n) return false;
+  const list = state.homeStock[category];
+  const it = list.find((x) => x.id === itemId);
+  if (!it) return false;
+  const norm = n.toLocaleLowerCase("he");
+  if (list.some((x) => x.id !== itemId && String(x.name).trim().toLocaleLowerCase("he") === norm)) {
+    return false;
+  }
+  it.name = n;
+  list.sort((a, b) => a.name.localeCompare(b.name, "he"));
+  return true;
+}
+
+export function updateDishName(state, dishId, nameRaw) {
+  const n = String(nameRaw ?? "").trim();
+  if (!n) return false;
+  const dish = state.dishes.find((d) => d.id === dishId);
+  if (!dish) return false;
+  const oldName = dish.name;
+  const norm = n.toLocaleLowerCase("he");
+  if (state.dishes.some((d) => d.id !== dishId && String(d.name).trim().toLocaleLowerCase("he") === norm)) {
+    return false;
+  }
+  dish.name = n;
+  const rec = state.recipes.find((r) => r.dishId === dishId);
+  if (rec && String(rec.title).trim() === String(oldName).trim()) rec.title = n;
+  state.dishes.sort((a, b) => a.name.localeCompare(b.name, "he"));
+  return true;
+}
+
+export function updatePlanEntryDish(state, weekStartKey, dateKey, entryId, dishId) {
+  const week = state.weeks[weekStartKey];
+  const entry = week?.days?.[dateKey]?.find((e) => e.id === entryId);
+  if (!entry) return null;
+  entry.dishId = dishId;
+  const duplicateOnDateKey = findDishPlannedElsewhereInWeek(state, weekStartKey, dishId, dateKey);
+  return { entry, duplicateOnDateKey };
+}
+
 export function deleteDish(state, dishId) {
   state.dishes = state.dishes.filter((d) => d.id !== dishId);
   state.recipes = state.recipes.filter((r) => r.dishId !== dishId);

@@ -2299,6 +2299,13 @@ body{
   padding: 4px 0;
   font-size: 0.95rem;
 }
+.lunch-stock-item-actions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
 .lunch-dish-row{
   display: flex;
   flex-wrap: wrap;
