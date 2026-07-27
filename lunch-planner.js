@@ -15,29 +15,98 @@ function emptyStock() {
   return { carbs: [], proteins: [], vegetables: [], extras: [] };
 }
 
+function filterStockItems(arr) {
+  return Array.isArray(arr) ? arr.filter((x) => x && typeof x === "object" && x.id && x.name) : [];
+}
+
+export function listStockCategories(state) {
+  const builtIn = LUNCH_STOCK_CATEGORIES.map((id) => ({
+    id,
+    label: LUNCH_STOCK_LABELS[id],
+    builtIn: true,
+  }));
+  const custom = (state.stockCategories ?? [])
+    .filter((c) => c?.id && c?.label && !LUNCH_STOCK_CATEGORIES.includes(c.id))
+    .map((c) => ({ id: c.id, label: String(c.label).trim(), builtIn: false }));
+  return [...builtIn, ...custom];
+}
+
+export function stockCategoryIds(state) {
+  return listStockCategories(state).map((c) => c.id);
+}
+
+export function stockCategoryLabel(state, catId) {
+  if (LUNCH_STOCK_LABELS[catId]) return LUNCH_STOCK_LABELS[catId];
+  const c = state.stockCategories?.find((x) => x.id === catId);
+  return c?.label ?? catId;
+}
+
+function isValidStockCategory(state, category) {
+  return stockCategoryIds(state).includes(category);
+}
+
+export function addStockCategory(state, labelRaw) {
+  const label = String(labelRaw ?? "").trim();
+  if (!label) return null;
+  const norm = label.toLocaleLowerCase("he");
+  for (const id of stockCategoryIds(state)) {
+    if (stockCategoryLabel(state, id).toLocaleLowerCase("he") === norm) {
+      return { id, created: false };
+    }
+  }
+  const id = `cat_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`;
+  if (!state.stockCategories) state.stockCategories = [];
+  state.stockCategories.push({ id, label });
+  if (!state.homeStock) state.homeStock = emptyStock();
+  if (!state.homeStock[id]) state.homeStock[id] = [];
+  return { id, created: true };
+}
+
+function normalizeHomeStockFromParsed(parsedHome, stockCategories) {
+  const homeStock = emptyStock();
+  for (const cat of LUNCH_STOCK_CATEGORIES) {
+    homeStock[cat] = filterStockItems(parsedHome?.[cat]);
+  }
+  for (const c of stockCategories) {
+    if (!LUNCH_STOCK_CATEGORIES.includes(c.id)) {
+      homeStock[c.id] = filterStockItems(parsedHome?.[c.id]);
+    }
+  }
+  if (parsedHome && typeof parsedHome === "object") {
+    for (const key of Object.keys(parsedHome)) {
+      if (LUNCH_STOCK_CATEGORIES.includes(key) || homeStock[key]) continue;
+      if (!stockCategories.some((c) => c.id === key)) {
+        stockCategories.push({ id: key, label: key });
+      }
+      homeStock[key] = filterStockItems(parsedHome[key]);
+    }
+  }
+  return homeStock;
+}
+
 export function loadLunchPlanner() {
   try {
     const raw = localStorage.getItem(LUNCH_PLANNER_STORAGE_KEY);
-    if (!raw) return { homeStock: emptyStock(), dishes: [], recipes: [], weeks: {} };
+    if (!raw) {
+      return { homeStock: emptyStock(), stockCategories: [], dishes: [], recipes: [], weeks: {} };
+    }
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") {
-      return { homeStock: emptyStock(), dishes: [], recipes: [], weeks: {} };
+      return { homeStock: emptyStock(), stockCategories: [], dishes: [], recipes: [], weeks: {} };
     }
-    const homeStock = emptyStock();
-    for (const cat of LUNCH_STOCK_CATEGORIES) {
-      const arr = parsed.homeStock?.[cat];
-      homeStock[cat] = Array.isArray(arr)
-        ? arr.filter((x) => x && typeof x === "object" && x.id && x.name)
-        : [];
-    }
+    const stockCategories = Array.isArray(parsed.stockCategories)
+      ? parsed.stockCategories.filter((c) => c?.id && c?.label && !LUNCH_STOCK_CATEGORIES.includes(c.id))
+      : [];
+    const homeStock = normalizeHomeStockFromParsed(parsed.homeStock, stockCategories);
     return {
       homeStock,
+      stockCategories,
       dishes: Array.isArray(parsed.dishes) ? parsed.dishes.filter((d) => d?.id && d?.name) : [],
       recipes: Array.isArray(parsed.recipes) ? parsed.recipes.filter((r) => r?.id) : [],
       weeks: parsed.weeks && typeof parsed.weeks === "object" ? { ...parsed.weeks } : {},
     };
   } catch {
-    return { homeStock: emptyStock(), dishes: [], recipes: [], weeks: {} };
+    return { homeStock: emptyStock(), stockCategories: [], dishes: [], recipes: [], weeks: {} };
   }
 }
 
@@ -277,9 +346,10 @@ export function removePlanEntry(state, weekStartKey, dateKey, entryId) {
 }
 
 export function addHomeStockItem(state, category, id, name) {
-  if (!LUNCH_STOCK_CATEGORIES.includes(category)) return false;
+  if (!isValidStockCategory(state, category)) return false;
   const n = String(name ?? "").trim();
   if (!n) return false;
+  if (!state.homeStock[category]) state.homeStock[category] = [];
   const list = state.homeStock[category];
   const norm = n.toLocaleLowerCase("he");
   if (list.some((x) => String(x.name).trim().toLocaleLowerCase("he") === norm)) return false;
@@ -289,12 +359,12 @@ export function addHomeStockItem(state, category, id, name) {
 }
 
 export function removeHomeStockItem(state, category, itemId) {
-  if (!LUNCH_STOCK_CATEGORIES.includes(category)) return;
-  state.homeStock[category] = state.homeStock[category].filter((x) => x.id !== itemId);
+  if (!isValidStockCategory(state, category)) return;
+  state.homeStock[category] = (state.homeStock[category] ?? []).filter((x) => x.id !== itemId);
 }
 
 export function updateHomeStockItem(state, category, itemId, nameRaw) {
-  if (!LUNCH_STOCK_CATEGORIES.includes(category)) return false;
+  if (!isValidStockCategory(state, category)) return false;
   const n = String(nameRaw ?? "").trim();
   if (!n) return false;
   const list = state.homeStock[category];

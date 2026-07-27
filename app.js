@@ -57,8 +57,6 @@ import {
 } from "./hourly-schedule.js";
 import {
   LUNCH_PLANNER_STORAGE_KEY,
-  LUNCH_STOCK_CATEGORIES,
-  LUNCH_STOCK_LABELS,
   loadLunchPlanner,
   saveLunchPlanner,
   weekStartKeyFromDateKey,
@@ -77,6 +75,9 @@ import {
   addPlanEntryFromParts,
   updatePlanEntryFromParts,
   removePlanEntry,
+  listStockCategories,
+  stockCategoryLabel,
+  addStockCategory,
   addHomeStockItem,
   removeHomeStockItem,
   updateHomeStockItem,
@@ -431,20 +432,23 @@ function scheduleCloudBackupIfEnabled() {
 
 const APP_MODE_KEY = "idea-planner:app-mode:v1";
 
+const APP_MODES = [
+  "ideas",
+  "daily-today",
+  "today-tasks",
+  "daily-future",
+  "daily-history",
+  "daily-master",
+  "timing",
+  "pantry",
+  "hourly-schedule",
+  "lunch-planner",
+];
+
 function loadAppMode() {
   try {
     const v = localStorage.getItem(APP_MODE_KEY);
-    if (
-      v === "ideas" ||
-      v === "daily-today" ||
-      v === "today-tasks" ||
-      v === "daily-future" ||
-      v === "daily-history" ||
-      v === "daily-master" ||
-      v === "timing" ||
-      v === "pantry"
-    )
-      return v;
+    if (APP_MODES.includes(v)) return v;
   } catch {
     /* ignore */
   }
@@ -514,7 +518,21 @@ function persistHourlySchedule() {
 
 let lunchPlanner = loadLunchPlanner();
 let lunchBrowseWeekStart = weekStartKeyFromDateKey(localDateKey());
-let lunchPlannerTab = "week";
+
+const LUNCH_PLANNER_TAB_KEY = "idea-planner:lunch-tab:v1";
+const LUNCH_PLANNER_TABS = ["week", "stock", "dishes", "recipes"];
+
+function loadLunchPlannerTab() {
+  try {
+    const v = localStorage.getItem(LUNCH_PLANNER_TAB_KEY);
+    if (LUNCH_PLANNER_TABS.includes(v)) return v;
+  } catch {
+    /* ignore */
+  }
+  return "week";
+}
+
+let lunchPlannerTab = loadLunchPlannerTab();
 /** רכיבים שטרם אוחדו למנה — לפי מפתח יום (תכנון שבוע) */
 let lunchDayDraftParts = {};
 
@@ -1237,7 +1255,13 @@ function dateKeyToLocalDate(dateKey) {
 }
 
 function setLunchPlannerTab(tab) {
+  if (!LUNCH_PLANNER_TABS.includes(tab)) tab = "week";
   lunchPlannerTab = tab;
+  try {
+    localStorage.setItem(LUNCH_PLANNER_TAB_KEY, tab);
+  } catch {
+    /* ignore */
+  }
   document.querySelectorAll(".lunch-tab").forEach((el) => {
     const t = el.getAttribute("data-lunch-tab");
     const on = t === tab;
@@ -1401,6 +1425,28 @@ function mealPartsDataAttr(parts) {
   return escapeHtml(JSON.stringify(parts));
 }
 
+function renderLunchComposeStockCatSelect() {
+  const sel = document.getElementById("lunchComposeStockCat");
+  if (!(sel instanceof HTMLSelectElement)) return;
+  const cats = listStockCategories(lunchPlanner);
+  sel.innerHTML = cats
+    .map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)}</option>`)
+    .join("");
+}
+
+function lunchComposeSelectedStockCat(compose) {
+  const sel = (compose ?? document).querySelector("#lunchComposeStockCat");
+  return sel instanceof HTMLSelectElement ? sel.value : "";
+}
+
+function lunchTryAddNameToHomeStock(name, catId) {
+  const n = String(name ?? "").trim();
+  if (!n || !catId) return false;
+  if (!addHomeStockItem(lunchPlanner, catId, uid("lstk"), n)) return false;
+  persistLunchPlanner();
+  return true;
+}
+
 function renderLunchDayPickerHtml(dateKey) {
   const catalogMeals = lunchCatalogMeals().sort((a, b) =>
     dishLabelForSelect(a).localeCompare(dishLabelForSelect(b), "he"),
@@ -1416,8 +1462,8 @@ function renderLunchDayPickerHtml(dateKey) {
       .join("");
     body += `<div class="lunch-day-pick-group"><div class="lunch-day-pick-group-title">מנות שלי</div>${mealRows}</div>`;
   }
-  for (const cat of LUNCH_STOCK_CATEGORIES) {
-    const items = lunchPlanner.homeStock[cat] ?? [];
+  for (const cat of listStockCategories(lunchPlanner)) {
+    const items = lunchPlanner.homeStock[cat.id] ?? [];
     if (!items.length) continue;
     const names = items.map((it) => it.name).sort((a, b) => a.localeCompare(b, "he"));
     const rows = names
@@ -1426,7 +1472,7 @@ function renderLunchDayPickerHtml(dateKey) {
           `<label class="lunch-day-pick"><input type="checkbox" class="lunch-day-pick-cb" data-date-key="${escapeHtml(dateKey)}" value="${escapeHtml(name)}" /><span class="lunch-day-pick-label">${escapeHtml(name)}</span></label>`,
       )
       .join("");
-    body += `<div class="lunch-day-pick-group"><div class="lunch-day-pick-group-title">${escapeHtml(LUNCH_STOCK_LABELS[cat])}</div>${rows}</div>`;
+    body += `<div class="lunch-day-pick-group"><div class="lunch-day-pick-group-title">${escapeHtml(stockCategoryLabel(lunchPlanner, cat.id))}</div>${rows}</div>`;
   }
   if (!body) {
     return `<div class="lunch-day-picker lunch-day-picker--empty"></div>`;
@@ -1477,6 +1523,7 @@ function mountLunchComposeDialog(dateKey) {
   if (title) title.textContent = `ארוחה — ${formatHebrewDateLabel(dateKey)}`;
   const picker = document.getElementById("lunchComposePicker");
   if (picker) picker.innerHTML = renderLunchDayPickerHtml(dateKey);
+  renderLunchComposeStockCatSelect();
   refreshLunchComposeDialogTray(dateKey);
   const inp = document.getElementById("lunchComposeFreeText");
   if (inp instanceof HTMLInputElement) inp.value = "";
@@ -1508,6 +1555,12 @@ function applyLunchDraftAdd(dateKey, compose) {
   const inp =
     compose?.querySelector("#lunchComposeFreeText") ?? compose?.querySelector(".lunch-day-dish-input");
   const freeText = inp instanceof HTMLInputElement ? inp.value.trim() : "";
+  const catId = lunchComposeSelectedStockCat(compose);
+  if (freeText && !catId) {
+    toast("בחרי קטגוריה במלאי.");
+    return;
+  }
+  if (freeText && catId) lunchTryAddNameToHomeStock(freeText, catId);
   let added = 0;
   for (const part of toAdd) {
     if (lunchDraftAddPart(dateKey, part)) added++;
@@ -1529,6 +1582,15 @@ function saveLunchComposeDialog() {
   const dateKey = dlg.dataset.composeDateKey;
   if (!dateKey) return;
   const compose = lunchComposeDialogRoot();
+  const inp =
+    compose?.querySelector("#lunchComposeFreeText") ?? compose?.querySelector(".lunch-day-dish-input");
+  const freeText = inp instanceof HTMLInputElement ? inp.value.trim() : "";
+  const catId = lunchComposeSelectedStockCat(compose);
+  if (freeText && !catId) {
+    toast("בחרי קטגוריה במלאי.");
+    return;
+  }
+  if (freeText && catId) lunchTryAddNameToHomeStock(freeText, catId);
   let parts = gatherLunchPartsFromCompose(compose, { includeDraft: true, dateKey });
   if (!parts.length) {
     toast("אין רכיבים.");
@@ -1612,24 +1674,32 @@ function renderLunchStockPanel() {
   const root = document.getElementById("lunchStockRoot");
   if (!root) return;
   root.innerHTML = "";
-  for (const cat of LUNCH_STOCK_CATEGORIES) {
+  const newCatWrap = document.createElement("div");
+  newCatWrap.className = "lunch-stock-new-cat-wrap";
+  newCatWrap.innerHTML = `
+    <form class="add-row lunch-stock-new-cat" autocomplete="off">
+      <input class="input" type="text" maxlength="40" placeholder="קטגוריה חדשה…" required />
+      <button class="btn" type="submit">+ קטגוריה</button>
+    </form>`;
+  root.appendChild(newCatWrap);
+  for (const cat of listStockCategories(lunchPlanner)) {
     const block = document.createElement("div");
     block.className = "lunch-stock-block";
-    const items = lunchPlanner.homeStock[cat] ?? [];
+    const items = lunchPlanner.homeStock[cat.id] ?? [];
     block.innerHTML = `
-      <div class="lunch-stock-block-title">${escapeHtml(LUNCH_STOCK_LABELS[cat])}</div>
+      <div class="lunch-stock-block-title">${escapeHtml(stockCategoryLabel(lunchPlanner, cat.id))}</div>
       <ul class="lunch-stock-list">
         ${items
           .map(
             (it) =>
               `<li><span>${escapeHtml(it.name)}</span><span class="lunch-stock-item-actions">
-              <button type="button" class="btn btn-ghost" data-action="lunch-edit-stock" data-cat="${escapeHtml(cat)}" data-item-id="${escapeHtml(it.id)}" data-name="${escapeHtml(it.name)}">עריכה</button>
-              <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="lunch-remove-stock" data-cat="${escapeHtml(cat)}" data-item-id="${escapeHtml(it.id)}">×</button>
+              <button type="button" class="btn btn-ghost" data-action="lunch-edit-stock" data-cat="${escapeHtml(cat.id)}" data-item-id="${escapeHtml(it.id)}" data-name="${escapeHtml(it.name)}">עריכה</button>
+              <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="lunch-remove-stock" data-cat="${escapeHtml(cat.id)}" data-item-id="${escapeHtml(it.id)}">×</button>
               </span></li>`,
           )
           .join("")}
       </ul>
-      <form class="add-row lunch-stock-add" data-stock-cat="${escapeHtml(cat)}" autocomplete="off">
+      <form class="add-row lunch-stock-add" data-stock-cat="${escapeHtml(cat.id)}" autocomplete="off">
         <input class="input" type="text" maxlength="80" placeholder="הוספה…" required />
         <button class="btn" type="submit">+</button>
       </form>
@@ -3780,7 +3850,7 @@ function wireGlobalHandlers() {
     btn.addEventListener("click", () => {
       const t = btn.getAttribute("data-lunch-tab");
       if (t) {
-        lunchPlannerTab = t;
+        setLunchPlannerTab(t);
         render();
         queueMicrotask(() => {
           document.querySelector(".lunch-tab.active")?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
@@ -3812,7 +3882,7 @@ function wireGlobalHandlers() {
     if (editStock?.dataset.cat && editStock?.dataset.itemId) {
       openLunchTextEditDialog({
         kind: "stock",
-        heading: `עריכה — ${LUNCH_STOCK_LABELS[editStock.dataset.cat] ?? ""}`,
+        heading: `עריכה — ${stockCategoryLabel(lunchPlanner, editStock.dataset.cat)}`,
         value: editStock.dataset.name ?? "",
         stockCat: editStock.dataset.cat,
         stockItemId: editStock.dataset.itemId,
@@ -3877,6 +3947,20 @@ function wireGlobalHandlers() {
   });
 
   document.getElementById("viewLunchPlanner")?.addEventListener("submit", (e) => {
+    const newCatForm = e.target.closest("form.lunch-stock-new-cat");
+    if (newCatForm instanceof HTMLFormElement) {
+      e.preventDefault();
+      const inp = newCatForm.querySelector("input");
+      const label = inp instanceof HTMLInputElement ? inp.value.trim() : "";
+      if (!label) return;
+      const res = addStockCategory(lunchPlanner, label);
+      if (!res) return;
+      persistLunchPlanner();
+      if (inp instanceof HTMLInputElement) inp.value = "";
+      render();
+      toast(res.created ? "קטגוריה נוספה." : "קטגוריה כבר קיימת.");
+      return;
+    }
     const stockForm = e.target.closest("form.lunch-stock-add");
     if (stockForm instanceof HTMLFormElement) {
       e.preventDefault();

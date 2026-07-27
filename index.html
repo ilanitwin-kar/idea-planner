@@ -595,16 +595,22 @@
         <div class="dialog-title" id="lunchComposeTitle">ארוחה ליום</div>
         <div id="lunchComposeTray" class="lunch-compose-tray-wrap"></div>
         <div id="lunchComposePicker"></div>
-        <div class="lunch-day-add-row lunch-compose-add-row">
-          <input
-            id="lunchComposeFreeText"
-            class="input lunch-day-dish-input"
-            type="text"
-            maxlength="120"
-            placeholder="טקסט חופשי…"
-            autocomplete="off"
-          />
-          <button type="button" id="lunchComposeAddBtn" class="btn btn-ghost">הוספה</button>
+        <div class="lunch-compose-free-row">
+          <label class="lunch-compose-cat-label checkline">
+            <span class="lunch-compose-cat-caption">קטגוריה במלאי</span>
+            <select id="lunchComposeStockCat" class="select lunch-compose-stock-cat" aria-label="קטגוריה במלאי"></select>
+          </label>
+          <div class="lunch-day-add-row lunch-compose-add-row">
+            <input
+              id="lunchComposeFreeText"
+              class="input lunch-day-dish-input"
+              type="text"
+              maxlength="120"
+              placeholder="רכיב חדש…"
+              autocomplete="off"
+            />
+            <button type="button" id="lunchComposeAddBtn" class="btn btn-ghost">הוספה</button>
+          </div>
         </div>
         <div class="dialog-actions">
           <button type="button" id="lunchComposeSaveBtn" class="btn">שמירת ארוחה ליום</button>

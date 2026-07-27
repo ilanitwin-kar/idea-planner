@@ -2425,7 +2425,10 @@ body{
 .lunch-compose-dialog .lunch-day-pick-scroll{ max-height: min(340px, 45vh); }
 .lunch-compose-tray-wrap:empty{ display: none; }
 .lunch-compose-tray-wrap .lunch-day-tray--empty{ display: none; }
-.lunch-compose-add-row{ margin-top: 10px; }
+.lunch-compose-free-row{ margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.lunch-compose-cat-label{ margin: 0; }
+.lunch-compose-stock-cat{ width: 100%; max-width: 100%; }
+.lunch-stock-new-cat-wrap{ grid-column: 1 / -1; margin-bottom: 8px; }
 
 .lunch-stock-grid{
   display: grid;
