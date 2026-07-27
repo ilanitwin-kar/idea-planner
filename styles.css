@@ -2266,12 +2266,71 @@ body{
   gap: 8px;
   align-items: center;
 }
-.lunch-day-add .lunch-day-select{
+.lunch-day-compose{
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+.lunch-day-tray{
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--border-soft);
+  background: var(--surface-2);
+}
+.lunch-day-tray--empty{
+  border-style: solid;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.lunch-day-tray-label{
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.lunch-day-tray-preview{
+  font-weight: 700;
+  color: var(--heading);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+.lunch-draft-chips{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lunch-draft-chip{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-pink-soft);
+  font-size: 0.88rem;
+  color: var(--heading);
+}
+.lunch-draft-chip-remove{
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 2px;
+  color: var(--muted);
+}
+.lunch-day-add-row{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.lunch-day-add-row .lunch-day-select{
   flex: 1 1 100%;
   min-width: 0;
-  max-width: 100%;
 }
-.lunch-day-add .input{ flex: 1 1 120px; min-width: 0; }
+.lunch-day-add-row .input{ flex: 1 1 120px; min-width: 0; }
+.lunch-day-commit-btn{ width: 100%; }
 .lunch-stock-grid{
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
