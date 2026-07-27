@@ -652,15 +652,7 @@
     <dialog id="lunchTextEditDialog" class="dialog">
       <form method="dialog" class="dialog-inner" id="lunchTextEditForm">
         <div class="dialog-title" id="lunchTextEditHeading">עריכה</div>
-        <input
-          id="lunchTextEditInput"
-          class="input"
-          type="text"
-          maxlength="120"
-          list="lunchTextEditDishList"
-          autocomplete="off"
-        />
-        <datalist id="lunchTextEditDishList"></datalist>
+        <textarea id="lunchTextEditInput" class="textarea" rows="6" maxlength="800" placeholder="רכיב אחד בכל שורה…"></textarea>
         <div class="dialog-actions">
           <button id="lunchTextEditSave" class="btn" type="button">שמירה</button>
           <button class="btn btn-ghost" value="cancel" type="submit">ביטול</button>

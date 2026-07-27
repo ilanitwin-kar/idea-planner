@@ -91,6 +91,72 @@ export function findDish(state, dishId) {
   return state.dishes.find((d) => d.id === dishId) ?? null;
 }
 
+export function normalizePartList(partsRaw) {
+  const raw = Array.isArray(partsRaw) ? partsRaw : [partsRaw];
+  const out = [];
+  const seen = new Set();
+  for (const x of raw) {
+    const p = String(x ?? "").trim();
+    if (!p) continue;
+    const k = p.toLocaleLowerCase("he");
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+  }
+  return out;
+}
+
+/** רכיבי מנה להצגה */
+export function dishParts(dish) {
+  if (!dish) return [];
+  if (Array.isArray(dish.parts) && dish.parts.length) {
+    return normalizePartList(dish.parts);
+  }
+  const n = String(dish.name ?? "").trim();
+  return n ? [n] : [];
+}
+
+export function mealTitleForParts(parts) {
+  const p = normalizePartList(parts);
+  if (p.length === 0) return "";
+  if (p.length === 1) return p[0];
+  return "ארוחה";
+}
+
+function partsSignature(parts) {
+  return normalizePartList(parts)
+    .map((x) => x.toLocaleLowerCase("he"))
+    .join("|");
+}
+
+export function findOrCreateMealFromParts(state, partsRaw) {
+  const parts = normalizePartList(partsRaw);
+  if (!parts.length) return null;
+  const sig = partsSignature(parts);
+  const existing = state.dishes.find((d) => partsSignature(dishParts(d)) === sig);
+  if (existing) return { dish: existing, created: false };
+  const dish = {
+    id: `dish_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`,
+    name: mealTitleForParts(parts),
+  };
+  if (parts.length > 1) dish.parts = [...parts];
+  state.dishes.push(dish);
+  state.dishes.sort((a, b) => a.name.localeCompare(b.name, "he"));
+  return { dish, created: true };
+}
+
+export function applyPartsToDish(dish, partsRaw) {
+  const parts = normalizePartList(partsRaw);
+  if (!parts.length || !dish) return;
+  if (parts.length === 1) {
+    dish.name = parts[0];
+    delete dish.parts;
+  } else {
+    dish.name = "ארוחה";
+    dish.parts = [...parts];
+  }
+}
+
 export function findOrCreateDish(state, nameRaw) {
   const name = String(nameRaw ?? "").trim();
   if (!name) return null;

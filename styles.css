@@ -2329,8 +2329,54 @@ body{
   flex: 1 1 100%;
   min-width: 0;
 }
+.lunch-day-meal-card{
+  flex-direction: column;
+  align-items: stretch;
+  background: #fff;
+  border: 1px solid rgba(196, 30, 58, 0.2);
+}
+.lunch-meal-card-top{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.lunch-meal-title{
+  font-weight: 800;
+  color: var(--heading);
+  font-size: 1.05rem;
+}
+.lunch-meal-parts{
+  margin: 8px 0 0;
+  padding: 0 1.2rem 0 0;
+  list-style: none;
+}
+.lunch-meal-parts--compact{ margin-top: 6px; }
+.lunch-meal-part{
+  padding: 3px 0;
+  color: var(--text);
+  line-height: 1.4;
+}
+.lunch-meal-part-n{
+  color: var(--accent-pink);
+  font-weight: 700;
+  margin-inline-end: 4px;
+}
+.lunch-dish-row--meal{
+  flex-direction: column;
+  align-items: stretch;
+}
+.lunch-dish-row-main{ flex: 1; min-width: 0; }
+.lunch-dish-row-title{ font-weight: 700; color: var(--heading); }
+.lunch-dish-row-actions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
 .lunch-day-add-row .input{ flex: 1 1 120px; min-width: 0; }
 .lunch-day-commit-btn{ width: 100%; }
+
 .lunch-stock-grid{
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
