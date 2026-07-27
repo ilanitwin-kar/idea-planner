@@ -1237,9 +1237,6 @@ function setLunchPlannerTab(tab) {
     const key = id.toLowerCase();
     document.getElementById(`lunchPanel${id}`)?.classList.toggle("hidden", lunchPlannerTab !== key);
   }
-  queueMicrotask(() => {
-    document.querySelector(".lunch-tab.active")?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
-  });
 }
 
 function openLunchRecipeDialog(dishId) {
@@ -1416,6 +1413,19 @@ function commitLunchDayMeal(dateKey, composeEl) {
     if (sel instanceof HTMLSelectElement) sel.value = "";
     if (inp instanceof HTMLInputElement) inp.value = "";
   }
+}
+
+function refreshLunchDayTray(dateKey) {
+  const compose = document.querySelector(`.lunch-day-compose[data-date-key="${dateKey}"]`);
+  if (!compose) {
+    render();
+    return;
+  }
+  const oldTray = compose.querySelector(".lunch-day-tray, .lunch-day-tray--empty");
+  const wrap = document.createElement("div");
+  wrap.innerHTML = renderLunchDayTrayHtml(dateKey);
+  const newTray = wrap.firstElementChild;
+  if (oldTray && newTray) oldTray.replaceWith(newTray);
 }
 
 function lunchWeekSelectOptionsHtml() {
@@ -3639,6 +3649,9 @@ function wireGlobalHandlers() {
       if (t) {
         lunchPlannerTab = t;
         render();
+        queueMicrotask(() => {
+          document.querySelector(".lunch-tab.active")?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+        });
       }
     });
   });
@@ -3722,7 +3735,7 @@ function wireGlobalHandlers() {
     const draftRemove = e.target.closest("[data-action='lunch-draft-remove']");
     if (draftRemove?.dataset.dateKey != null && draftRemove?.dataset.partIndex != null) {
       lunchDraftRemovePart(draftRemove.dataset.dateKey, Number(draftRemove.dataset.partIndex));
-      render();
+      refreshLunchDayTray(draftRemove.dataset.dateKey);
       return;
     }
     const draftAdd = e.target.closest("[data-action='lunch-draft-add']");
@@ -3743,7 +3756,7 @@ function wireGlobalHandlers() {
       }
       if (sel instanceof HTMLSelectElement) sel.value = "";
       if (inp instanceof HTMLInputElement) inp.value = "";
-      render();
+      refreshLunchDayTray(draftAdd.dataset.dateKey);
       return;
     }
     const dayCommit = e.target.closest("[data-action='lunch-day-commit']");
@@ -4438,6 +4451,9 @@ function wireGlobalHandlers() {
 function render() {
   maybeRollDailyJournalAtMidnight();
 
+  const restoreLunchScroll = appMode === "lunch-planner";
+  const lunchScrollY = restoreLunchScroll ? window.scrollY : 0;
+
   updateAppViewsVisibility();
   syncAppNavActive();
   document.body.classList.toggle("app-mode-ideas", appMode === "ideas");
@@ -4469,6 +4485,12 @@ function render() {
   if (timerDlg instanceof HTMLDialogElement && timerDlg.open) syncDailyTimerDialogUI();
 
   applyMobileLayout();
+
+  if (restoreLunchScroll) {
+    queueMicrotask(() => {
+      window.scrollTo(0, lunchScrollY);
+    });
+  }
 }
 
 async function boot() {
