@@ -2173,3 +2173,140 @@ body{
   color: var(--danger, #b00020);
 }
 
+.lunch-tabs{ margin-bottom: 14px; }
+.lunch-panel.hidden{ display: none; }
+.lunch-week-nav{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.lunch-week-title{
+  flex: 1 1 auto;
+  font-weight: 700;
+  color: var(--heading);
+  text-align: center;
+  min-width: 140px;
+}
+.lunch-week-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.lunch-day-card{
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+}
+.lunch-day-card.is-today{
+  outline: 2px solid rgba(196, 30, 58, 0.28);
+  background: #fffafb;
+}
+.lunch-day-head{
+  font-weight: 700;
+  color: var(--heading);
+  margin-bottom: 8px;
+  font-size: 0.95rem;
+}
+.lunch-day-list{
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lunch-day-item{
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--accent-pink-soft);
+}
+.lunch-day-item-name{ flex: 1; font-weight: 600; color: var(--heading); }
+.lunch-day-item-actions{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.lunch-day-add{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.lunch-day-add .input{ flex: 1 1 120px; min-width: 0; }
+.lunch-stock-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.lunch-stock-block{
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+}
+.lunch-stock-block-title{
+  font-weight: 700;
+  color: var(--heading);
+  margin-bottom: 8px;
+}
+.lunch-stock-list{
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lunch-stock-list li{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 0.95rem;
+}
+.lunch-dish-row{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.lunch-dish-row:last-child{ border-bottom: none; }
+.lunch-recipes-list{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lunch-recipe-card{
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 14px;
+  background: #fff;
+}
+.lunch-recipe-card-title{
+  font-weight: 700;
+  color: var(--heading);
+  margin-bottom: 4px;
+}
+.lunch-recipe-card-dish{
+  font-size: 0.9rem;
+  color: var(--accent-pink);
+  margin-bottom: 8px;
+}
+.lunch-recipe-card-body{
+  white-space: pre-wrap;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+

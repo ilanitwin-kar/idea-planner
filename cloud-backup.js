@@ -23,6 +23,7 @@ export const CLOUD_SNAPSHOT_STORAGE_KEYS = [
   "idea-planner:pantry:v1",
   "idea-planner:daily-timing-log:v1",
   "idea-planner:hourly-schedule:v1",
+  "idea-planner:lunch-planner:v1",
 ];
 
 const SNAPSHOT_VERSION = 1;

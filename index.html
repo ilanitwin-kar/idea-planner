@@ -52,6 +52,7 @@
             <div class="top-menu-list-header">היום שלי</div>
             <button id="topNavDailyMaster" class="top-menu-list-item" type="button">משימות יומיומיות</button>
             <button id="topNavHourlySchedule" class="top-menu-list-item" type="button">לו״ז יומי (שעות)</button>
+            <button id="topNavLunchPlanner" class="top-menu-list-item" type="button">תכנון צהריים</button>
             <button id="topNavTiming" class="top-menu-list-item" type="button">תזמון</button>
             <button id="topNavPantry" class="top-menu-list-item" type="button">מלאי בית</button>
 
@@ -633,6 +634,69 @@
         </div>
       </form>
     </dialog>
+
+    <dialog id="lunchRecipeDialog" class="dialog dialog--wide">
+      <form method="dialog" class="dialog-inner" id="lunchRecipeForm">
+        <div class="dialog-title">מתכון למנה</div>
+        <div id="lunchRecipeDishLine" class="dialog-text"></div>
+        <input id="lunchRecipeTitle" class="input" type="text" maxlength="120" placeholder="שם המתכון…" />
+        <textarea id="lunchRecipeBody" class="textarea" rows="12" placeholder="שלבים, מצרכים, הערות…"></textarea>
+        <div class="dialog-actions">
+          <button id="lunchRecipeSave" class="btn" type="button">שמירה במאגר מתכונים</button>
+          <button id="lunchRecipeDelete" class="btn btn-ghost hourly-edit-delete hidden" type="button">מחיקת מתכון</button>
+          <button class="btn btn-ghost" value="cancel" type="submit">סגירה</button>
+        </div>
+      </form>
+    </dialog>
+
+    <section id="viewLunchPlanner" class="daily-page hidden" aria-label="תכנון צהריים">
+      <div class="daily-inner">
+        <div class="panel-header daily-header">
+          <div class="panel-title">תכנון צהריים</div>
+          <details class="help-collapsible panel-hint">
+            <summary class="help-collapsible-summary">הסבר</summary>
+            <div class="help-collapsible-body">
+              <div class="dialog-text dialog-text--tight">
+                תכנני ארוחות לכל ימי השבוע. מנה שכבר מתוכננת ביום אחר תקבל התראה. מנות חדשות נשמרות ברשימה הכללית; מתכון אופציונלי נכנס למאגר מתכונים נפרד.
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="tabs lunch-tabs" role="tablist" aria-label="תכנון צהריים">
+          <button type="button" class="tab lunch-tab active" data-lunch-tab="week" role="tab" aria-selected="true">שבוע</button>
+          <button type="button" class="tab lunch-tab" data-lunch-tab="stock" role="tab" aria-selected="false">מלאי בית</button>
+          <button type="button" class="tab lunch-tab" data-lunch-tab="dishes" role="tab" aria-selected="false">מנות שלי</button>
+          <button type="button" class="tab lunch-tab" data-lunch-tab="recipes" role="tab" aria-selected="false">מתכונים</button>
+        </div>
+
+        <div id="lunchPanelWeek" class="lunch-panel" role="tabpanel">
+          <div class="lunch-week-nav">
+            <button type="button" id="lunchWeekPrev" class="btn btn-ghost">שבוע קודם</button>
+            <div id="lunchWeekTitle" class="lunch-week-title"></div>
+            <button type="button" id="lunchWeekNext" class="btn btn-ghost">שבוע הבא</button>
+            <button type="button" id="lunchWeekThis" class="btn btn-ghost">השבוע</button>
+          </div>
+          <div id="lunchWeekGrid" class="lunch-week-grid"></div>
+        </div>
+
+        <div id="lunchPanelStock" class="lunch-panel hidden" role="tabpanel">
+          <div id="lunchStockRoot" class="lunch-stock-grid"></div>
+        </div>
+
+        <div id="lunchPanelDishes" class="lunch-panel hidden" role="tabpanel">
+          <form id="lunchDishAddForm" class="add-row lunch-dish-add" autocomplete="off">
+            <input id="lunchDishNewName" class="input" type="text" maxlength="120" placeholder="מנה חדשה לרשימה הכללית…" />
+            <button class="btn" type="submit">הוספה</button>
+          </form>
+          <div id="lunchDishesList" class="list lunch-dishes-list" role="list"></div>
+        </div>
+
+        <div id="lunchPanelRecipes" class="lunch-panel hidden" role="tabpanel">
+          <div id="lunchRecipesList" class="lunch-recipes-list" role="list"></div>
+        </div>
+      </div>
+    </section>
 
     <section id="viewDailyTiming" class="daily-page hidden" aria-label="תזמון">
       <div class="daily-inner">
