@@ -123,7 +123,7 @@ export function mealTitleForParts(parts) {
   return "ארוחה";
 }
 
-function partsSignature(parts) {
+export function partsSignature(parts) {
   return normalizePartList(parts)
     .map((x) => x.toLocaleLowerCase("he"))
     .join("|");
@@ -169,6 +169,42 @@ export function findOrCreateDish(state, nameRaw) {
   return { dish, created: true };
 }
 
+export function mealSnapshotFromDish(dish) {
+  const parts = dishParts(dish);
+  return { name: mealTitleForParts(parts), parts: [...parts] };
+}
+
+export function planEntryMealParts(state, entry) {
+  if (!entry) return [];
+  const dish = entry.dishId ? findDish(state, entry.dishId) : null;
+  if (dish) return dishParts(dish);
+  const snap = entry.mealSnapshot;
+  if (snap && Array.isArray(snap.parts) && snap.parts.length) return normalizePartList(snap.parts);
+  if (snap?.name) return normalizePartList([snap.name]);
+  return ["—"];
+}
+
+function attachMealSnapshotToEntry(state, entry) {
+  if (!entry?.dishId) return;
+  const dish = findDish(state, entry.dishId);
+  if (dish) entry.mealSnapshot = mealSnapshotFromDish(dish);
+}
+
+/** אותה ארוחה (לפי רכיבים) ביום אחר בשבוע */
+export function findMealPlannedElsewhereInWeek(state, weekStartKey, partsRaw, exceptDateKey) {
+  const sig = partsSignature(partsRaw);
+  if (!sig) return null;
+  const w = state.weeks[weekStartKey];
+  if (!w?.days) return null;
+  for (const [dk, entries] of Object.entries(w.days)) {
+    if (dk === exceptDateKey || !Array.isArray(entries)) continue;
+    for (const ent of entries) {
+      if (partsSignature(planEntryMealParts(state, ent)) === sig) return dk;
+    }
+  }
+  return null;
+}
+
 /** יום אחר בשבוע שכבר מתוכנן אותה מנה (לא כולל exceptDateKey) */
 export function findDishPlannedElsewhereInWeek(state, weekStartKey, dishId, exceptDateKey) {
   const w = state.weeks[weekStartKey];
@@ -191,6 +227,7 @@ export function addPlanEntry(state, weekStartKey, dateKey, dishId) {
     id: `plan_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`,
     dishId,
   };
+  attachMealSnapshotToEntry(state, entry);
   week.days[dateKey].push(entry);
   return { entry, duplicateOnDateKey };
 }
@@ -258,22 +295,31 @@ export function updatePlanEntryDish(state, weekStartKey, dateKey, entryId, dishI
   const entry = week?.days?.[dateKey]?.find((e) => e.id === entryId);
   if (!entry) return null;
   entry.dishId = dishId;
+  attachMealSnapshotToEntry(state, entry);
   const duplicateOnDateKey = findDishPlannedElsewhereInWeek(state, weekStartKey, dishId, dateKey);
   return { entry, duplicateOnDateKey };
 }
 
+/** הסרה מ«מנות שלי» בלבד — תכנון השבוע נשמר (עותק ב-mealSnapshot) */
 export function deleteDish(state, dishId) {
+  const dish = findDish(state, dishId);
+  if (dish) {
+    const snap = mealSnapshotFromDish(dish);
+    for (const wk of Object.keys(state.weeks)) {
+      const w = state.weeks[wk];
+      if (!w?.days) continue;
+      for (const dk of Object.keys(w.days)) {
+        for (const ent of w.days[dk]) {
+          if (ent?.dishId === dishId) {
+            ent.mealSnapshot = snap;
+            delete ent.dishId;
+          }
+        }
+      }
+    }
+  }
   state.dishes = state.dishes.filter((d) => d.id !== dishId);
   state.recipes = state.recipes.filter((r) => r.dishId !== dishId);
-  for (const wk of Object.keys(state.weeks)) {
-    const w = state.weeks[wk];
-    if (!w?.days) continue;
-    for (const dk of Object.keys(w.days)) {
-      w.days[dk] = w.days[dk].filter((e) => e.dishId !== dishId);
-      if (w.days[dk].length === 0) delete w.days[dk];
-    }
-    if (Object.keys(w.days).length === 0) delete state.weeks[wk];
-  }
 }
 
 export function getRecipeForDish(state, dishId) {

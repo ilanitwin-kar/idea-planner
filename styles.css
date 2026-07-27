@@ -2376,6 +2376,7 @@ body{
 }
 .lunch-day-add-row .input{ flex: 1 1 120px; min-width: 0; }
 .lunch-day-commit-btn{ width: 100%; }
+.lunch-day-commit-btn:disabled{ opacity: 0.45; cursor: not-allowed; }
 
 .lunch-stock-grid{
   display: grid;

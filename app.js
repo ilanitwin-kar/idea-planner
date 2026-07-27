@@ -69,8 +69,11 @@ import {
   normalizePartList,
   dishParts,
   mealTitleForParts,
+  partsSignature,
   applyPartsToDish,
   findDishPlannedElsewhereInWeek,
+  findMealPlannedElsewhereInWeek,
+  planEntryMealParts,
   addPlanEntry,
   removePlanEntry,
   addHomeStockItem,
@@ -1317,7 +1320,7 @@ function saveLunchTextEditDialog() {
     const created = findOrCreateMealFromParts(lunchPlanner, parts);
     if (!created?.dish || !dateKey || !entryId) return;
     const { dish } = created;
-    const dup = findDishPlannedElsewhereInWeek(lunchPlanner, lunchBrowseWeekStart, dish.id, dateKey);
+    const dup = findMealPlannedElsewhereInWeek(lunchPlanner, lunchBrowseWeekStart, parts, dateKey);
     if (dup) {
       const ok = confirm(
         `ארוחה דומה כבר מתוכננת ל־${formatHebrewDateLabel(dup)}.\n\nלשמור בכל זאת?`,
@@ -1333,14 +1336,17 @@ function saveLunchTextEditDialog() {
 }
 
 function renderLunchMealItemHtml(ent, dateKey) {
-  const dish = findDish(lunchPlanner, ent.dishId);
-  const parts = dishParts(dish);
+  const parts = planEntryMealParts(lunchPlanner, ent);
+  const dish = ent.dishId ? findDish(lunchPlanner, ent.dishId) : null;
   const hasRec = dish ? !!getRecipeForDish(lunchPlanner, dish.id) : false;
-  const dishId = dish?.id ?? ent.dishId;
+  const dishId = dish?.id ?? "";
+  const recipeBtn = dishId
+    ? `<button type="button" class="btn btn-ghost" data-action="lunch-recipe" data-dish-id="${escapeHtml(dishId)}">מתכון</button>`
+    : "";
   const actions = `
     <span class="lunch-day-item-actions">
       <button type="button" class="btn btn-ghost" data-action="lunch-edit-plan" data-date-key="${escapeHtml(dateKey)}" data-entry-id="${escapeHtml(ent.id)}" data-dish-id="${escapeHtml(dishId)}">עריכה</button>
-      <button type="button" class="btn btn-ghost" data-action="lunch-recipe" data-dish-id="${escapeHtml(dishId)}">מתכון</button>
+      ${recipeBtn}
       <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="lunch-remove-plan" data-date-key="${escapeHtml(dateKey)}" data-entry-id="${escapeHtml(ent.id)}">הסרה</button>
     </span>`;
   if (parts.length <= 1) {
@@ -1410,7 +1416,7 @@ function lunchDraftClear(dateKey) {
 function renderLunchDayTrayHtml(dateKey) {
   const parts = lunchDraftGet(dateKey);
   if (!parts.length) {
-    return `<div class="lunch-day-tray lunch-day-tray--empty dialog-hint">בחרי/כתבי רכיב → «+ לרכיבים» (כמה פעמים) → «שמירת ארוחה ליום».</div>`;
+    return `<div class="lunch-day-tray lunch-day-tray--empty dialog-hint">בחרי/כתבי רכיב → «הוספה» (כמה פעמים) → בסיום «שמירת ארוחה ליום».</div>`;
   }
   const chips = parts
     .map(
@@ -1419,22 +1425,21 @@ function renderLunchDayTrayHtml(dateKey) {
     )
     .join("");
   const preview = mealTitleForParts(parts);
-  return `<div class="lunch-day-tray"><div class="lunch-day-tray-label">ארוחה ליום:</div><div class="lunch-day-tray-preview">${escapeHtml(preview === "ארוחה" && parts.length > 1 ? `${parts.length} רכיבים` : preview)}</div><div class="lunch-draft-chips">${chips}</div></div>`;
+  return `<div class="lunch-day-tray"><div class="lunch-day-tray-label">רכיבים לארוחה (עדיין לא נשמר):</div><div class="lunch-day-tray-preview">${escapeHtml(preview === "ארוחה" && parts.length > 1 ? `${parts.length} רכיבים` : preview)}</div><div class="lunch-draft-chips">${chips}</div></div>`;
+}
+
+function syncLunchDayCommitButton(dateKey) {
+  const compose = document.querySelector(`.lunch-day-compose[data-date-key="${CSS.escape(dateKey)}"]`);
+  const btn = compose?.querySelector("[data-action='lunch-day-commit']");
+  if (btn instanceof HTMLButtonElement) {
+    btn.disabled = lunchDraftGet(dateKey).length === 0;
+  }
 }
 
 function commitLunchDayMeal(dateKey, composeEl) {
-  let parts = [...lunchDraftGet(dateKey)];
-  if (!parts.length && composeEl) {
-    const sel = composeEl.querySelector(".lunch-day-select");
-    const inp = composeEl.querySelector(".lunch-day-dish-input");
-    parts = partsFromSelectOrText(
-      sel instanceof HTMLSelectElement ? sel.value : "",
-      inp instanceof HTMLInputElement ? inp.value : "",
-    );
-  }
-  parts = normalizePartList(parts);
+  const parts = normalizePartList(lunchDraftGet(dateKey));
   if (!parts.length) {
-    toast("הוסיפי רכיבים («+ לרכיבים») ואז «שמירת ארוחה ליום».");
+    toast("קודם «הוספה» לכל הרכיבים, ורק אז «שמירת ארוחה ליום».");
     return;
   }
   addLunchPlanForDay(dateKey, parts);
@@ -1445,6 +1450,7 @@ function commitLunchDayMeal(dateKey, composeEl) {
     if (sel instanceof HTMLSelectElement) sel.value = "";
     if (inp instanceof HTMLInputElement) inp.value = "";
   }
+  syncLunchDayCommitButton(dateKey);
 }
 
 function refreshLunchDayTray(dateKey) {
@@ -1458,6 +1464,7 @@ function refreshLunchDayTray(dateKey) {
   wrap.innerHTML = renderLunchDayTrayHtml(dateKey);
   const newTray = wrap.firstElementChild;
   if (oldTray && newTray) oldTray.replaceWith(newTray);
+  syncLunchDayCommitButton(dateKey);
 }
 
 function lunchWeekSelectOptionsHtml() {
@@ -1509,9 +1516,9 @@ function renderLunchWeekPanel() {
         <div class="lunch-day-add-row">
           <select class="select lunch-day-select" aria-label="בחירה ממלאי או מנות">${selectOpts}</select>
           <input class="input lunch-day-dish-input" type="text" maxlength="120" placeholder="או טקסט חופשי…" />
-          <button type="button" class="btn btn-ghost" data-action="lunch-draft-add" data-date-key="${escapeHtml(dateKey)}">+ לרכיבים</button>
+          <button type="button" class="btn btn-ghost" data-action="lunch-draft-add" data-date-key="${escapeHtml(dateKey)}">הוספה</button>
         </div>
-        <button type="button" class="btn lunch-day-commit-btn" data-action="lunch-day-commit" data-date-key="${escapeHtml(dateKey)}">שמירת ארוחה ליום</button>
+        <button type="button" class="btn lunch-day-commit-btn" data-action="lunch-day-commit" data-date-key="${escapeHtml(dateKey)}"${lunchDraftGet(dateKey).length ? "" : " disabled"}>שמירת ארוחה ליום</button>
       </div>
     `;
     grid.appendChild(card);
@@ -1616,28 +1623,24 @@ function renderLunchPlannerPage() {
 
 function addLunchPlanForDay(dateKey, partsRaw) {
   const weekStart = lunchBrowseWeekStart;
-  let parts = normalizePartList(partsRaw);
+  const parts = normalizePartList(partsRaw);
   if (!parts.length) {
     toast("נא להזין לפחות רכיב אחד.");
     return;
   }
 
-  const entries = planEntriesForDay(lunchPlanner, weekStart, dateKey);
-  let mergedParts = [...parts];
-  for (const ent of entries) {
-    mergedParts.push(...dishParts(findDish(lunchPlanner, ent.dishId)));
-  }
-  mergedParts = normalizePartList(mergedParts);
-
-  for (const ent of [...entries]) {
-    removePlanEntry(lunchPlanner, weekStart, dateKey, ent.id);
+  const sameDay = planEntriesForDay(lunchPlanner, weekStart, dateKey);
+  const sig = partsSignature(parts);
+  if (sameDay.some((ent) => partsSignature(planEntryMealParts(lunchPlanner, ent)) === sig)) {
+    toast("ארוחה כזו כבר מתוכננת ליום הזה.");
+    return;
   }
 
-  const created = findOrCreateMealFromParts(lunchPlanner, mergedParts);
+  const created = findOrCreateMealFromParts(lunchPlanner, parts);
   if (!created?.dish) return;
   const { dish, created: isNew } = created;
 
-  const dup = findDishPlannedElsewhereInWeek(lunchPlanner, weekStart, dish.id, dateKey);
+  const dup = findMealPlannedElsewhereInWeek(lunchPlanner, weekStart, parts, dateKey);
   if (dup) {
     const ok = confirm(
       `ארוחה דומה כבר מתוכננת ל־${formatHebrewDateLabel(dup)}.\n\nלהוסיף גם ל־${formatHebrewDateLabel(dateKey)}?`,
@@ -1646,10 +1649,10 @@ function addLunchPlanForDay(dateKey, partsRaw) {
   }
   addPlanEntry(lunchPlanner, weekStart, dateKey, dish.id);
   persistLunchPlanner();
-  if (mergedParts.length > 1) toast(`נשמרה ארוחה (${mergedParts.length} רכיבים).`);
+  if (parts.length > 1) toast(`נשמרה ארוחה (${parts.length} רכיבים) ליום.`);
   else if (isNew) toast("נוסף ליום ול«מנות שלי».");
   else if (dup) toast("נוסף — שימי לב שבישלת כבר השבוע.");
-  else toast("עודכנה ארוחת היום.");
+  else toast("נוספה ארוחה ליום.");
   render();
 }
 
@@ -3748,8 +3751,9 @@ function wireGlobalHandlers() {
     }
     const editPlan = e.target.closest("[data-action='lunch-edit-plan']");
     if (editPlan?.dataset.dateKey && editPlan?.dataset.entryId) {
-      const dish = findDish(lunchPlanner, editPlan.dataset.dishId);
-      const parts = dishParts(dish);
+      const entries = planEntriesForDay(lunchPlanner, lunchBrowseWeekStart, editPlan.dataset.dateKey);
+      const ent = entries.find((e) => e.id === editPlan.dataset.entryId);
+      const parts = planEntryMealParts(lunchPlanner, ent);
       openLunchTextEditDialog({
         kind: "plan",
         heading: "עריכת ארוחה ליום (שורה לכל רכיב)",
@@ -3777,7 +3781,7 @@ function wireGlobalHandlers() {
     if (delDish?.dataset.dishId) {
       const dish = findDish(lunchPlanner, delDish.dataset.dishId);
       if (!dish) return;
-      if (!confirm(`למחוק את «${dish.name}» מהרשימה (וגם מהתכנון)?`)) return;
+      if (!confirm(`למחוק את «${dish.name}» מ«מנות שלי»?\n\nהארוחות שכבר בתכנון השבוע יישארו (ללא קישור לרשימה).`)) return;
       deleteDish(lunchPlanner, delDish.dataset.dishId);
       persistLunchPlanner();
       render();
@@ -3813,6 +3817,7 @@ function wireGlobalHandlers() {
       if (sel instanceof HTMLSelectElement) sel.value = "";
       if (inp instanceof HTMLInputElement) inp.value = "";
       refreshLunchDayTray(draftAdd.dataset.dateKey);
+      toast(added === 1 ? "רכיב נוסף — המשיכי «הוספה» או «שמירת ארוחה ליום»." : `${added} רכיבים נוספו.`);
       return;
     }
     const dayCommit = e.target.closest("[data-action='lunch-day-commit']");
