@@ -600,17 +600,29 @@
             <span class="lunch-compose-cat-caption">קטגוריה במלאי</span>
             <select id="lunchComposeStockCat" class="select lunch-compose-stock-cat" aria-label="קטגוריה במלאי"></select>
           </label>
-          <div class="lunch-day-add-row lunch-compose-add-row">
+          <div class="lunch-compose-new-cat add-row">
             <input
-              id="lunchComposeFreeText"
-              class="input lunch-day-dish-input"
+              id="lunchComposeNewCatName"
+              class="input"
               type="text"
-              maxlength="120"
-              placeholder="רכיב חדש…"
+              maxlength="40"
+              placeholder="קטגוריה חדשה…"
               autocomplete="off"
             />
-            <button type="button" id="lunchComposeAddBtn" class="btn btn-ghost">הוספה</button>
+            <button type="button" id="lunchComposeNewCatBtn" class="btn btn-ghost">+ קטגוריה</button>
           </div>
+          <div class="lunch-day-add-row lunch-compose-add-row">
+            <textarea
+              id="lunchComposeFreeText"
+              class="input lunch-day-dish-input lunch-compose-free-text"
+              rows="2"
+              maxlength="400"
+              placeholder="רכיבים… שורה, פסיק או Enter להוספה"
+              autocomplete="off"
+            ></textarea>
+            <button type="button" id="lunchComposeAddBtn" class="btn btn-ghost">הוספה למגש</button>
+          </div>
+          <p class="lunch-compose-hint">המגש למעלה = ארוחה אחת. «שמירת ארוחה ליום» שומרת את כל הרכיבים יחד.</p>
         </div>
         <div class="dialog-actions">
           <button type="button" id="lunchComposeSaveBtn" class="btn">שמירת ארוחה ליום</button>

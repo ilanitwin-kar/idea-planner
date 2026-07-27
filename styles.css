@@ -2428,6 +2428,9 @@ body{
 .lunch-compose-free-row{ margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .lunch-compose-cat-label{ margin: 0; }
 .lunch-compose-stock-cat{ width: 100%; max-width: 100%; }
+.lunch-compose-new-cat{ margin-top: 0; }
+.lunch-compose-free-text{ resize: vertical; min-height: 2.5rem; }
+.lunch-compose-hint{ margin: 4px 0 0; font-size: 0.85rem; opacity: 0.85; }
 .lunch-stock-new-cat-wrap{ grid-column: 1 / -1; margin-bottom: 8px; }
 
 .lunch-stock-grid{

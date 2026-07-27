@@ -1425,18 +1425,35 @@ function mealPartsDataAttr(parts) {
   return escapeHtml(JSON.stringify(parts));
 }
 
-function renderLunchComposeStockCatSelect() {
+function renderLunchComposeStockCatSelect(preferredId = "") {
   const sel = document.getElementById("lunchComposeStockCat");
   if (!(sel instanceof HTMLSelectElement)) return;
+  const prev = preferredId || sel.value;
   const cats = listStockCategories(lunchPlanner);
   sel.innerHTML = cats
     .map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)}</option>`)
     .join("");
+  if (prev && cats.some((c) => c.id === prev)) sel.value = prev;
 }
 
 function lunchComposeSelectedStockCat(compose) {
   const sel = (compose ?? document).querySelector("#lunchComposeStockCat");
   return sel instanceof HTMLSelectElement ? sel.value : "";
+}
+
+function lunchEnsureComposeStockCategory(compose, { quiet = false } = {}) {
+  const newInp = compose?.querySelector("#lunchComposeNewCatName");
+  const newLabel = newInp instanceof HTMLInputElement ? newInp.value.trim() : "";
+  if (newLabel) {
+    const res = addStockCategory(lunchPlanner, newLabel);
+    if (!res) return "";
+    persistLunchPlanner();
+    renderLunchComposeStockCatSelect(res.id);
+    if (newInp instanceof HTMLInputElement) newInp.value = "";
+    if (!quiet && res.created) toast("קטגוריה נוספה.");
+    return res.id;
+  }
+  return lunchComposeSelectedStockCat(compose);
 }
 
 function lunchTryAddNameToHomeStock(name, catId) {
@@ -1445,6 +1462,53 @@ function lunchTryAddNameToHomeStock(name, catId) {
   if (!addHomeStockItem(lunchPlanner, catId, uid("lstk"), n)) return false;
   persistLunchPlanner();
   return true;
+}
+
+function splitComposeFreeTextParts(text) {
+  return String(text ?? "")
+    .split(/[\n,;|]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function lunchComposeFreeTextEl(compose) {
+  return compose?.querySelector("#lunchComposeFreeText") ?? compose?.querySelector(".lunch-day-dish-input");
+}
+
+function lunchComposeFreeTextValue(compose) {
+  const el = lunchComposeFreeTextEl(compose);
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value.trim();
+  return "";
+}
+
+function clearLunchComposeFreeText(compose) {
+  const el = lunchComposeFreeTextEl(compose);
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.value = "";
+}
+
+/** טקסט פתוח → מגש (+ מלאi); נדרשת קטגוריה אם יש טקסט */
+function flushComposePendingToDraft(dateKey, compose) {
+  const raw = lunchComposeFreeTextValue(compose);
+  const typedParts = splitComposeFreeTextParts(raw);
+  if (!typedParts.length) return { ok: true };
+  const catId = lunchEnsureComposeStockCategory(compose, { quiet: true });
+  if (!catId) return { ok: false };
+  for (const name of typedParts) lunchTryAddNameToHomeStock(name, catId);
+  for (const name of typedParts) lunchDraftAddPart(dateKey, name);
+  clearLunchComposeFreeText(compose);
+  return { ok: true };
+}
+
+function removeLunchDaySinglesIncludedInParts(dateKey, parts) {
+  if (parts.length < 2) return;
+  const weekStart = lunchBrowseWeekStart;
+  const names = new Set(parts.map((p) => p.toLocaleLowerCase("he")));
+  for (const ent of planEntriesForDay(lunchPlanner, weekStart, dateKey)) {
+    const ep = planEntryMealParts(lunchPlanner, ent);
+    if (ep.length === 1 && names.has(ep[0].toLocaleLowerCase("he"))) {
+      removePlanEntry(lunchPlanner, weekStart, dateKey, ent.id);
+    }
+  }
 }
 
 function renderLunchDayPickerHtml(dateKey) {
@@ -1480,9 +1544,9 @@ function renderLunchDayPickerHtml(dateKey) {
   return `<div class="lunch-day-picker"><div class="lunch-day-pick-scroll">${body}</div></div>`;
 }
 
-function gatherLunchPartsFromCompose(compose, { includeDraft = false, dateKey = "" } = {}) {
+function gatherLunchCheckedParts(compose) {
   if (!compose) return [];
-  const raw = includeDraft && dateKey ? [...lunchDraftGet(dateKey)] : [];
+  const raw = [];
   compose.querySelectorAll("input.lunch-day-pick-cb:checked").forEach((cb) => {
     if (!(cb instanceof HTMLInputElement)) return;
     const encoded = cb.getAttribute("data-meal-parts");
@@ -1502,10 +1566,17 @@ function gatherLunchPartsFromCompose(compose, { includeDraft = false, dateKey = 
     }
     if (cb.value.trim()) raw.push(cb.value.trim());
   });
-  const inp =
-    compose.querySelector("#lunchComposeFreeText") ?? compose.querySelector(".lunch-day-dish-input");
-  const text = inp instanceof HTMLInputElement ? inp.value.trim() : "";
-  if (text) raw.push(text);
+  return normalizePartList(raw);
+}
+
+function gatherLunchPartsFromCompose(compose, { includeDraft = false, dateKey = "", includeFreeText = true } = {}) {
+  if (!compose) return [];
+  const raw = includeDraft && dateKey ? [...lunchDraftGet(dateKey)] : [];
+  raw.push(...gatherLunchCheckedParts(compose));
+  if (includeFreeText) {
+    const text = lunchComposeFreeTextValue(compose);
+    if (text) raw.push(...splitComposeFreeTextParts(text));
+  }
   return normalizePartList(raw);
 }
 
@@ -1525,8 +1596,7 @@ function mountLunchComposeDialog(dateKey) {
   if (picker) picker.innerHTML = renderLunchDayPickerHtml(dateKey);
   renderLunchComposeStockCatSelect();
   refreshLunchComposeDialogTray(dateKey);
-  const inp = document.getElementById("lunchComposeFreeText");
-  if (inp instanceof HTMLInputElement) inp.value = "";
+  clearLunchComposeFreeText(lunchComposeDialogRoot());
 }
 
 function openLunchComposeDialog(dateKey) {
@@ -1541,39 +1611,55 @@ function clearLunchComposeDialogInputs(compose) {
   compose?.querySelectorAll("input.lunch-day-pick-cb:checked").forEach((cb) => {
     if (cb instanceof HTMLInputElement) cb.checked = false;
   });
-  const inp =
-    compose?.querySelector("#lunchComposeFreeText") ?? compose?.querySelector(".lunch-day-dish-input");
-  if (inp instanceof HTMLInputElement) inp.value = "";
+  clearLunchComposeFreeText(compose);
 }
 
 function applyLunchDraftAdd(dateKey, compose) {
-  const toAdd = gatherLunchPartsFromCompose(compose, { includeDraft: false });
-  if (!toAdd.length) {
+  const inp = lunchComposeFreeTextEl(compose);
+  const typedParts = splitComposeFreeTextParts(lunchComposeFreeTextValue(compose));
+  const fromChecks = gatherLunchCheckedParts(compose);
+
+  if (!typedParts.length && !fromChecks.length) {
     toast("אין מה להוסיף.");
     return;
   }
-  const inp =
-    compose?.querySelector("#lunchComposeFreeText") ?? compose?.querySelector(".lunch-day-dish-input");
-  const freeText = inp instanceof HTMLInputElement ? inp.value.trim() : "";
-  const catId = lunchComposeSelectedStockCat(compose);
-  if (freeText && !catId) {
-    toast("בחרי קטגוריה במלאי.");
-    return;
+
+  let stockCatId = "";
+  if (typedParts.length) {
+    stockCatId = lunchEnsureComposeStockCategory(compose, { quiet: true });
+    if (!stockCatId) {
+      toast("בחרי קטגוריה או הוסיפי שם לקטגוריה חדשה.");
+      return;
+    }
+    for (const name of typedParts) lunchTryAddNameToHomeStock(name, stockCatId);
   }
-  if (freeText && catId) lunchTryAddNameToHomeStock(freeText, catId);
+
+  const partsToAdd = normalizePartList([...fromChecks, ...typedParts]);
   let added = 0;
-  for (const part of toAdd) {
+  for (const part of partsToAdd) {
     if (lunchDraftAddPart(dateKey, part)) added++;
   }
-  if (!added) {
+
+  clearLunchComposeFreeText(compose);
+
+  if (added === 0) {
     toast("כבר בארוחה.");
     return;
   }
-  clearLunchComposeDialogInputs(compose);
+
+  compose?.querySelectorAll("input.lunch-day-pick-cb:checked").forEach((cb) => {
+    if (cb instanceof HTMLInputElement) cb.checked = false;
+  });
+
   refreshLunchComposeDialogTray(dateKey);
   const picker = document.getElementById("lunchComposePicker");
   if (picker) picker.innerHTML = renderLunchDayPickerHtml(dateKey);
-  toast(added === 1 ? "נוסף." : `${added} נוספו.`);
+  if (stockCatId) renderLunchComposeStockCatSelect(stockCatId);
+
+  toast(added === 1 ? "נוסף למגש." : `${added} נוספו למגש.`);
+  queueMicrotask(() => {
+    if (inp instanceof HTMLInputElement || inp instanceof HTMLTextAreaElement) inp.focus();
+  });
 }
 
 function saveLunchComposeDialog() {
@@ -1582,20 +1668,25 @@ function saveLunchComposeDialog() {
   const dateKey = dlg.dataset.composeDateKey;
   if (!dateKey) return;
   const compose = lunchComposeDialogRoot();
-  const inp =
-    compose?.querySelector("#lunchComposeFreeText") ?? compose?.querySelector(".lunch-day-dish-input");
-  const freeText = inp instanceof HTMLInputElement ? inp.value.trim() : "";
-  const catId = lunchComposeSelectedStockCat(compose);
-  if (freeText && !catId) {
-    toast("בחרי קטגוריה במלאי.");
+
+  const flush = flushComposePendingToDraft(dateKey, compose);
+  if (!flush.ok) {
+    toast("בחרי קטגוריה או הוסיפי שם לקטגוריה חדשה.");
     return;
   }
-  if (freeText && catId) lunchTryAddNameToHomeStock(freeText, catId);
-  let parts = gatherLunchPartsFromCompose(compose, { includeDraft: true, dateKey });
+
+  let parts = normalizePartList([...lunchDraftGet(dateKey), ...gatherLunchCheckedParts(compose)]);
   if (!parts.length) {
-    toast("אין רכיבים.");
+    toast("אין רכיבים — הוסיפי למגש או הקלידי רכיבים.");
     return;
   }
+
+  if (parts.length >= 2) removeLunchDaySinglesIncludedInParts(dateKey, parts);
+
+  compose?.querySelectorAll("input.lunch-day-pick-cb:checked").forEach((cb) => {
+    if (cb instanceof HTMLInputElement) cb.checked = false;
+  });
+
   if (!addLunchPlanForDay(dateKey, parts)) return;
   lunchDraftClear(dateKey);
   dlg.close();
@@ -1639,7 +1730,7 @@ function renderLunchDayTrayHtml(dateKey) {
     )
     .join("");
   const preview = mealTitleForParts(parts);
-  return `<div class="lunch-day-tray"><div class="lunch-day-tray-preview">${escapeHtml(preview === "ארוחה" && parts.length > 1 ? `${parts.length} רכיבים` : preview)}</div><div class="lunch-draft-chips">${chips}</div></div>`;
+  return `<div class="lunch-day-tray"><div class="lunch-day-tray-preview">${escapeHtml(preview === "ארוחה" && parts.length > 1 ? `ארוחה — ${parts.length} רכיבים` : preview)}</div><div class="lunch-draft-chips">${chips}</div></div>`;
 }
 
 function renderLunchWeekPanel() {
@@ -3981,6 +4072,32 @@ function wireGlobalHandlers() {
     const dateKey = dlg instanceof HTMLDialogElement ? dlg.dataset.composeDateKey : "";
     if (!dateKey) return;
     applyLunchDraftAdd(dateKey, lunchComposeDialogRoot());
+  });
+  document.getElementById("lunchComposeNewCatBtn")?.addEventListener("click", () => {
+    const compose = lunchComposeDialogRoot();
+    const newInp = compose?.querySelector("#lunchComposeNewCatName");
+    const label = newInp instanceof HTMLInputElement ? newInp.value.trim() : "";
+    if (!label) {
+      toast("שם קטגוריה.");
+      return;
+    }
+    const res = addStockCategory(lunchPlanner, label);
+    if (!res) return;
+    persistLunchPlanner();
+    renderLunchComposeStockCatSelect(res.id);
+    if (newInp instanceof HTMLInputElement) newInp.value = "";
+    const dlg = lunchComposeDialogEl();
+    const dateKey = dlg instanceof HTMLDialogElement ? dlg.dataset.composeDateKey : "";
+    if (dateKey) {
+      const picker = document.getElementById("lunchComposePicker");
+      if (picker) picker.innerHTML = renderLunchDayPickerHtml(dateKey);
+    }
+    toast(res.created ? "קטגוריה נוספה." : "נבחרה קטגוריה קיימת.");
+  });
+  document.getElementById("lunchComposeFreeText")?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    e.preventDefault();
+    document.getElementById("lunchComposeAddBtn")?.click();
   });
   document.getElementById("lunchComposeSaveBtn")?.addEventListener("click", () => saveLunchComposeDialog());
   document.getElementById("lunchComposeCancelBtn")?.addEventListener("click", () => {
