@@ -43,6 +43,18 @@ import {
   applyPantryImportRows,
 } from "./pantry.js";
 import { lookupOpenFoodFactsProduct, normalizeBarcodeInput } from "./pantry-barcode.js";
+import {
+  HOURLY_SCHEDULE_STORAGE_KEY,
+  loadHourlySchedule,
+  saveHourlySchedule,
+  addScheduleBlock,
+  updateScheduleBlock,
+  deleteScheduleBlock,
+  blocksForDay,
+  scheduleDayProgress,
+  timeStringToMinutes,
+  minutesToTimeString,
+} from "./hourly-schedule.js";
 
 const APP_DISPLAY_NAME = "מרכז הרעיונות של אילנית";
 
@@ -452,6 +464,18 @@ function persistDayJournal() {
 
 let timingState = loadTimingState();
 let pantryState = loadPantry();
+let hourlySchedule = loadHourlySchedule();
+/** יום שמוצג בלו״ז השעות */
+let hourlyBrowseDateKey = localDateKey();
+
+const HOURLY_TIMELINE_START_MIN = 6 * 60;
+const HOURLY_TIMELINE_END_MIN = 23 * 60;
+const HOURLY_TIMELINE_ROW_PX = 52;
+
+function persistHourlySchedule() {
+  saveHourlySchedule(hourlySchedule);
+  scheduleCloudBackupIfEnabled();
+}
 /** סינון מלאי: `all` או מזהה מיקום (fridge / pantry / freezer) */
 let pantryLocFilter = "all";
 /** סינון מצב מלאי: all | in_stock | out | low */
@@ -820,6 +844,7 @@ function syncAppNavActive() {
     ["daily-master", "topNavDailyMaster"],
     ["timing", "topNavTiming"],
     ["pantry", "topNavPantry"],
+    ["hourly-schedule", "topNavHourlySchedule"],
   ];
   for (const [m, id] of pairs) {
     document.getElementById(id)?.classList.toggle("active", appMode === m);
@@ -835,6 +860,7 @@ function updateAppViewsVisibility() {
   document.getElementById("viewDailyMaster")?.classList.toggle("hidden", appMode !== "daily-master");
   document.getElementById("viewDailyTiming")?.classList.toggle("hidden", appMode !== "timing");
   document.getElementById("viewPantry")?.classList.toggle("hidden", appMode !== "pantry");
+  document.getElementById("viewHourlySchedule")?.classList.toggle("hidden", appMode !== "hourly-schedule");
 }
 
 function dayItemLabel(it) {
@@ -1040,6 +1066,121 @@ function renderDailyTodayPage() {
     }
   }
   syncDailyTodayFormPlaceSelect(viewKey);
+}
+
+function shiftHourlyBrowse(deltaDays) {
+  hourlyBrowseDateKey = addDaysToDateKey(hourlyBrowseDateKey, deltaDays);
+  render();
+}
+
+function setHourlyBrowseDateKey(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+  hourlyBrowseDateKey = dateKey;
+  render();
+}
+
+function openHourlyScheduleEditDialog(dateKey, blockId) {
+  const blk = hourlySchedule.days[dateKey]?.blocks?.find((x) => x.id === blockId);
+  if (!blk) return;
+  const dlg = document.getElementById("hourlyScheduleEditDialog");
+  if (!(dlg instanceof HTMLDialogElement)) return;
+  document.getElementById("hourlyScheduleEditTitle").value = blk.title;
+  document.getElementById("hourlyScheduleEditStart").value = minutesToTimeString(blk.startMin);
+  document.getElementById("hourlyScheduleEditEnd").value = minutesToTimeString(blk.endMin);
+  document.getElementById("hourlyScheduleEditDone").checked = !!blk.done;
+  dlg.dataset.editDateKey = dateKey;
+  dlg.dataset.editBlockId = blockId;
+  dlg.showModal();
+  queueMicrotask(() => document.getElementById("hourlyScheduleEditTitle")?.focus());
+}
+
+function renderHourlySchedulePage() {
+  const calendarToday = localDateKey();
+  const viewKey = hourlyBrowseDateKey;
+  const titleEl = document.getElementById("hourlyScheduleDateTitle");
+  const dateInp = document.getElementById("hourlyScheduleDateInput");
+  const jumpBtn = document.getElementById("hourlyScheduleJumpToday");
+  const timeline = document.getElementById("hourlyScheduleTimeline");
+  const progEl = document.getElementById("hourlyScheduleProgress");
+
+  if (titleEl) titleEl.textContent = formatHebrewDateLabel(viewKey);
+  if (dateInp instanceof HTMLInputElement && dateInp.value !== viewKey) dateInp.value = viewKey;
+  if (jumpBtn) jumpBtn.classList.toggle("hidden", viewKey === calendarToday);
+
+  if (!timeline) return;
+
+  const startMin = HOURLY_TIMELINE_START_MIN;
+  const endMin = HOURLY_TIMELINE_END_MIN;
+  const rowPx = HOURLY_TIMELINE_ROW_PX;
+  const totalMin = endMin - startMin;
+  const bodyHeight = (totalMin / 60) * rowPx;
+  const blocks = blocksForDay(hourlySchedule, viewKey);
+
+  const hoursCol = document.createElement("div");
+  hoursCol.className = "hourly-timeline-hours";
+  hoursCol.setAttribute("aria-hidden", "true");
+  for (let m = startMin; m <= endMin; m += 60) {
+    const lab = document.createElement("div");
+    lab.className = "hourly-hour-label";
+    lab.style.height = `${rowPx}px`;
+    lab.textContent = minutesToTimeString(m);
+    hoursCol.appendChild(lab);
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "hourly-timeline-grid";
+  grid.style.height = `${bodyHeight}px`;
+  for (let m = startMin; m < endMin; m += 60) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "hourly-hour-row";
+    row.style.height = `${rowPx}px`;
+    row.dataset.action = "hourly-pick-hour";
+    row.dataset.hour = String(Math.floor(m / 60));
+    row.setAttribute("aria-label", `הוספה בשעה ${minutesToTimeString(m)}`);
+    grid.appendChild(row);
+  }
+
+  const blocksLayer = document.createElement("div");
+  blocksLayer.className = "hourly-timeline-blocks";
+  blocksLayer.style.height = `${bodyHeight}px`;
+  for (const blk of blocks) {
+    const topPx = ((blk.startMin - startMin) / 60) * rowPx;
+    const heightPx = Math.max(((blk.endMin - blk.startMin) / 60) * rowPx, rowPx * 0.45);
+    if (blk.endMin <= startMin || blk.startMin >= endMin) continue;
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = `hourly-block${blk.done ? " hourly-block--done" : ""}`;
+    el.style.top = `${Math.max(0, topPx)}px`;
+    el.style.height = `${heightPx}px`;
+    el.dataset.action = "hourly-edit-block";
+    el.dataset.dateKey = viewKey;
+    el.dataset.blockId = blk.id;
+    const when = `${minutesToTimeString(blk.startMin)}–${minutesToTimeString(blk.endMin)}`;
+    el.innerHTML = `
+      <div class="hourly-block-time">${escapeHtml(when)}</div>
+      <div class="hourly-block-title">${escapeHtml(blk.title)}</div>
+    `;
+    blocksLayer.appendChild(el);
+  }
+
+  const body = document.createElement("div");
+  body.className = "hourly-timeline-body";
+  body.appendChild(grid);
+  body.appendChild(blocksLayer);
+
+  const inner = document.createElement("div");
+  inner.className = "hourly-timeline-inner";
+  inner.appendChild(hoursCol);
+  inner.appendChild(body);
+
+  timeline.replaceChildren(inner);
+
+  const pr = scheduleDayProgress(hourlySchedule, viewKey);
+  if (progEl) {
+    if (!pr.total) progEl.textContent = "לחצי על שורת שעה בלוח או מלאי טופס למעלה.";
+    else progEl.textContent = `${pr.done}/${pr.total} משימות בלו״ז`;
+  }
 }
 
 function renderDailyFuturePage() {
@@ -3000,10 +3141,13 @@ function wireGlobalHandlers() {
     localStorage.removeItem(LAST_CALENDAR_DAY_KEY);
     localStorage.removeItem(TIMING_LOG_KEY);
     localStorage.removeItem(PANTRY_STORAGE_KEY);
+    localStorage.removeItem(HOURLY_SCHEDULE_STORAGE_KEY);
     state = loadState();
     dayJournal = loadDayJournal();
     timingState = loadTimingState();
     pantryState = loadPantry();
+    hourlySchedule = loadHourlySchedule();
+    hourlyBrowseDateKey = localDateKey();
     lastKnownCalendarDayKey = localDateKey();
     dailyBrowseDateKey = lastKnownCalendarDayKey;
     persistLastKnownCalendarDay();
@@ -3071,6 +3215,106 @@ function wireGlobalHandlers() {
   bindAppMode("topNavDailyMaster", "daily-master");
   bindAppMode("topNavTiming", "timing");
   bindAppMode("topNavPantry", "pantry");
+  bindAppMode("topNavHourlySchedule", "hourly-schedule");
+
+  document.getElementById("hourlyScheduleDayPrev")?.addEventListener("click", () => shiftHourlyBrowse(-1));
+  document.getElementById("hourlyScheduleDayNext")?.addEventListener("click", () => shiftHourlyBrowse(1));
+  document.getElementById("hourlyScheduleJumpToday")?.addEventListener("click", () => {
+    hourlyBrowseDateKey = localDateKey();
+    render();
+  });
+  document.getElementById("hourlyScheduleDateInput")?.addEventListener("change", (e) => {
+    const v = e.target instanceof HTMLInputElement ? e.target.value : "";
+    if (v) setHourlyBrowseDateKey(v);
+  });
+
+  document.getElementById("hourlyScheduleAddForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const title = document.getElementById("hourlyScheduleTitle")?.value?.trim();
+    const startStr = document.getElementById("hourlyScheduleStart")?.value;
+    const endStr = document.getElementById("hourlyScheduleEnd")?.value;
+    const startMin = timeStringToMinutes(startStr);
+    if (!title || startMin == null) {
+      toast("נא למלא משימה ושעת התחלה.");
+      return;
+    }
+    let endMin = endStr ? timeStringToMinutes(endStr) : null;
+    if (endMin == null) endMin = Math.min(startMin + 60, 24 * 60 - 1);
+    if (endMin <= startMin) endMin = Math.min(startMin + 60, 24 * 60 - 1);
+    addScheduleBlock(hourlySchedule, hourlyBrowseDateKey, uid("hs"), title, startMin, endMin);
+    persistHourlySchedule();
+    document.getElementById("hourlyScheduleTitle").value = "";
+    toast("נוסף ללו״ז.");
+    render();
+  });
+
+  document.getElementById("hourlyScheduleTimeline")?.addEventListener("click", (e) => {
+    const pick = e.target.closest("[data-action='hourly-pick-hour']");
+    if (pick) {
+      const h = Number(pick.dataset.hour);
+      if (!Number.isFinite(h)) return;
+      const startInp = document.getElementById("hourlyScheduleStart");
+      const endInp = document.getElementById("hourlyScheduleEnd");
+      const startMin = h * 60;
+      const endMin = Math.min(startMin + 60, 24 * 60 - 1);
+      if (startInp instanceof HTMLInputElement) startInp.value = minutesToTimeString(startMin);
+      if (endInp instanceof HTMLInputElement) endInp.value = minutesToTimeString(endMin);
+      document.getElementById("hourlyScheduleTitle")?.focus();
+      return;
+    }
+    const edit = e.target.closest("[data-action='hourly-edit-block']");
+    if (edit) {
+      openHourlyScheduleEditDialog(edit.dataset.dateKey, edit.dataset.blockId);
+    }
+  });
+
+  document.getElementById("hourlyScheduleEditSave")?.addEventListener("click", () => {
+    const dlg = document.getElementById("hourlyScheduleEditDialog");
+    if (!(dlg instanceof HTMLDialogElement)) return;
+    const dateKey = dlg.dataset.editDateKey;
+    const blockId = dlg.dataset.editBlockId;
+    const title = document.getElementById("hourlyScheduleEditTitle")?.value?.trim();
+    const startMin = timeStringToMinutes(document.getElementById("hourlyScheduleEditStart")?.value);
+    const endMin = timeStringToMinutes(document.getElementById("hourlyScheduleEditEnd")?.value);
+    const done = !!document.getElementById("hourlyScheduleEditDone")?.checked;
+    if (!dateKey || !blockId || !title || startMin == null || endMin == null) {
+      toast("נא למלא את כל השדות.");
+      return;
+    }
+    const ok = updateScheduleBlock(hourlySchedule, dateKey, blockId, {
+      title,
+      startMin,
+      endMin,
+      done,
+    });
+    if (!ok) {
+      toast("לא נשמר — בדקי את הטקסט והשעות.");
+      return;
+    }
+    persistHourlySchedule();
+    dlg.close();
+    render();
+  });
+
+  document.getElementById("hourlyScheduleEditDelete")?.addEventListener("click", () => {
+    const dlg = document.getElementById("hourlyScheduleEditDialog");
+    if (!(dlg instanceof HTMLDialogElement)) return;
+    const dateKey = dlg.dataset.editDateKey;
+    const blockId = dlg.dataset.editBlockId;
+    if (!dateKey || !blockId) return;
+    if (!confirm("למחוק את המשימה מהלו״ז?")) return;
+    deleteScheduleBlock(hourlySchedule, dateKey, blockId);
+    persistHourlySchedule();
+    dlg.close();
+    render();
+  });
+
+  document.getElementById("hourlyScheduleEditTitle")?.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      document.getElementById("hourlyScheduleEditSave")?.click();
+    }
+  });
 
   document.getElementById("pantryFilterBar")?.addEventListener("click", (e) => {
     const b = e.target.closest("[data-pantry-filter]");
@@ -3615,6 +3859,7 @@ function render() {
   if (appMode === "daily-master") renderDailyMasterPage();
   if (appMode === "timing") renderDailyTimingPage();
   if (appMode === "pantry") renderPantryPage();
+  if (appMode === "hourly-schedule") renderHourlySchedulePage();
 
   const timerDlg = document.getElementById("dailyTimerDialog");
   if (timerDlg instanceof HTMLDialogElement && timerDlg.open) syncDailyTimerDialogUI();

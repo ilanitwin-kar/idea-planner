@@ -51,6 +51,7 @@
 
             <div class="top-menu-list-header">היום שלי</div>
             <button id="topNavDailyMaster" class="top-menu-list-item" type="button">משימות יומיומיות</button>
+            <button id="topNavHourlySchedule" class="top-menu-list-item" type="button">לו״ז יומי (שעות)</button>
             <button id="topNavTiming" class="top-menu-list-item" type="button">תזמון</button>
             <button id="topNavPantry" class="top-menu-list-item" type="button">מלאי בית</button>
 
@@ -572,6 +573,66 @@
         <div id="dailyMasterProgress" class="daily-progress"></div>
       </div>
     </section>
+
+    <section id="viewHourlySchedule" class="daily-page hidden" aria-label="לו״ז יומי לפי שעות">
+      <div class="daily-inner">
+        <div class="daily-inner-surface">
+          <div class="daily-hero">
+            <div class="daily-kicker">לו״ז יומי</div>
+            <div id="hourlyScheduleDateTitle" class="daily-date-title"></div>
+            <div class="daily-day-nav" role="toolbar" aria-label="מעבר בין ימים">
+              <button type="button" id="hourlyScheduleDayPrev" class="btn btn-ghost daily-day-nav-btn">יום לפני</button>
+              <button type="button" id="hourlyScheduleJumpToday" class="btn btn-ghost daily-day-nav-btn hidden">חזרה להיום</button>
+              <button type="button" id="hourlyScheduleDayNext" class="btn btn-ghost daily-day-nav-btn">יום אחרי</button>
+            </div>
+            <label class="hourly-date-pick checkline">
+              בחירת תאריך
+              <input id="hourlyScheduleDateInput" class="input" type="date" />
+            </label>
+          </div>
+
+          <form id="hourlyScheduleAddForm" class="hourly-add-form" autocomplete="off">
+            <input id="hourlyScheduleTitle" class="input" type="text" maxlength="200" placeholder="מה עושים?" required />
+            <label class="hourly-time-line">
+              <span>מ־</span>
+              <input id="hourlyScheduleStart" class="input hourly-time-input" type="time" required />
+            </label>
+            <label class="hourly-time-line">
+              <span>עד</span>
+              <input id="hourlyScheduleEnd" class="input hourly-time-input" type="time" />
+            </label>
+            <button class="btn" type="submit">הוספה ללו״ז</button>
+          </form>
+
+          <div id="hourlyScheduleTimeline" class="hourly-timeline" aria-label="לוח שעות"></div>
+          <div id="hourlyScheduleProgress" class="daily-progress"></div>
+        </div>
+      </div>
+    </section>
+
+    <dialog id="hourlyScheduleEditDialog" class="dialog">
+      <form method="dialog" class="dialog-inner" id="hourlyScheduleEditForm">
+        <div class="dialog-title">עריכת משימה בלו״ז</div>
+        <input id="hourlyScheduleEditTitle" class="input" type="text" maxlength="200" autocomplete="off" />
+        <div class="dialog-grid">
+          <label class="checkline">התחלה
+            <input id="hourlyScheduleEditStart" class="input" type="time" />
+          </label>
+          <label class="checkline">סיום
+            <input id="hourlyScheduleEditEnd" class="input" type="time" />
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <label class="checkline">
+            <input id="hourlyScheduleEditDone" type="checkbox" />
+            בוצע
+          </label>
+          <button id="hourlyScheduleEditSave" class="btn" type="button">שמירה</button>
+          <button id="hourlyScheduleEditDelete" class="btn btn-ghost hourly-edit-delete" type="button">מחיקה</button>
+          <button class="btn btn-ghost" value="cancel" type="submit">ביטול</button>
+        </div>
+      </form>
+    </dialog>
 
     <section id="viewDailyTiming" class="daily-page hidden" aria-label="תזמון">
       <div class="daily-inner">
