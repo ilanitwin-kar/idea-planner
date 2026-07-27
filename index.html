@@ -590,6 +590,29 @@
       </form>
     </dialog>
 
+    <dialog id="lunchComposeDialog" class="dialog dialog--wide">
+      <div class="dialog-inner lunch-compose-dialog">
+        <div class="dialog-title" id="lunchComposeTitle">ארוחה ליום</div>
+        <div id="lunchComposeTray" class="lunch-compose-tray-wrap"></div>
+        <div id="lunchComposePicker"></div>
+        <div class="lunch-day-add-row lunch-compose-add-row">
+          <input
+            id="lunchComposeFreeText"
+            class="input lunch-day-dish-input"
+            type="text"
+            maxlength="120"
+            placeholder="טקסט חופשי…"
+            autocomplete="off"
+          />
+          <button type="button" id="lunchComposeAddBtn" class="btn btn-ghost">הוספה</button>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" id="lunchComposeSaveBtn" class="btn">שמירת ארוחה ליום</button>
+          <button type="button" id="lunchComposeCancelBtn" class="btn btn-ghost">ביטול</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="lunchTextEditDialog" class="dialog">
       <form method="dialog" class="dialog-inner" id="lunchTextEditForm">
         <div class="dialog-title" id="lunchTextEditHeading">עריכה</div>
