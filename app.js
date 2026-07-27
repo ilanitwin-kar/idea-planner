@@ -1397,45 +1397,40 @@ function lunchCatalogMeals() {
   return lunchPlanner.dishes.filter((d) => dishParts(d).length > 1);
 }
 
+function mealPartsDataAttr(parts) {
+  return escapeHtml(JSON.stringify(parts));
+}
+
 function renderLunchDayPickerHtml(dateKey) {
-  const sections = [];
-  const catalogMeals = lunchCatalogMeals();
+  const catalogMeals = lunchCatalogMeals().sort((a, b) =>
+    dishLabelForSelect(a).localeCompare(dishLabelForSelect(b), "he"),
+  );
+  let body = "";
   if (catalogMeals.length) {
-    const names = [];
-    const seen = new Set();
-    for (const d of catalogMeals) {
-      for (const p of dishParts(d)) {
-        const key = p.toLocaleLowerCase("he");
-        if (seen.has(key)) continue;
-        seen.add(key);
-        names.push(p);
-      }
-    }
-    names.sort((a, b) => a.localeCompare(b, "he"));
-    if (names.length) sections.push({ title: "מנות שלי", names });
+    const mealRows = catalogMeals
+      .map((d) => {
+        const mealParts = dishParts(d);
+        const label = dishLabelForSelect(d);
+        return `<label class="lunch-day-pick lunch-day-pick--meal"><input type="checkbox" class="lunch-day-pick-cb lunch-day-pick-meal" data-date-key="${escapeHtml(dateKey)}" data-meal-parts="${mealPartsDataAttr(mealParts)}" /><span class="lunch-day-pick-label">${escapeHtml(label)}</span></label>`;
+      })
+      .join("");
+    body += `<div class="lunch-day-pick-group"><div class="lunch-day-pick-group-title">מנות שלי</div>${mealRows}</div>`;
   }
   for (const cat of LUNCH_STOCK_CATEGORIES) {
     const items = lunchPlanner.homeStock[cat] ?? [];
     if (!items.length) continue;
-    sections.push({
-      title: LUNCH_STOCK_LABELS[cat],
-      names: items.map((it) => it.name).sort((a, b) => a.localeCompare(b, "he")),
-    });
+    const names = items.map((it) => it.name).sort((a, b) => a.localeCompare(b, "he"));
+    const rows = names
+      .map(
+        (name) =>
+          `<label class="lunch-day-pick"><input type="checkbox" class="lunch-day-pick-cb" data-date-key="${escapeHtml(dateKey)}" value="${escapeHtml(name)}" /><span class="lunch-day-pick-label">${escapeHtml(name)}</span></label>`,
+      )
+      .join("");
+    body += `<div class="lunch-day-pick-group"><div class="lunch-day-pick-group-title">${escapeHtml(LUNCH_STOCK_LABELS[cat])}</div>${rows}</div>`;
   }
-  if (!sections.length) {
+  if (!body) {
     return `<div class="lunch-day-picker lunch-day-picker--empty"></div>`;
   }
-  const body = sections
-    .map((sec) => {
-      const rows = sec.names
-        .map(
-          (name) =>
-            `<label class="lunch-day-pick"><input type="checkbox" class="lunch-day-pick-cb" data-date-key="${escapeHtml(dateKey)}" value="${escapeHtml(name)}" /><span class="lunch-day-pick-label">${escapeHtml(name)}</span></label>`,
-        )
-        .join("");
-      return `<div class="lunch-day-pick-group"><div class="lunch-day-pick-group-title">${escapeHtml(sec.title)}</div>${rows}</div>`;
-    })
-    .join("");
   return `<div class="lunch-day-picker"><div class="lunch-day-pick-scroll">${body}</div></div>`;
 }
 
@@ -1443,7 +1438,23 @@ function gatherLunchPartsFromCompose(compose, { includeDraft = false, dateKey = 
   if (!compose) return [];
   const raw = includeDraft && dateKey ? [...lunchDraftGet(dateKey)] : [];
   compose.querySelectorAll("input.lunch-day-pick-cb:checked").forEach((cb) => {
-    if (cb instanceof HTMLInputElement && cb.value.trim()) raw.push(cb.value.trim());
+    if (!(cb instanceof HTMLInputElement)) return;
+    const encoded = cb.getAttribute("data-meal-parts");
+    if (encoded) {
+      try {
+        const mealParts = JSON.parse(encoded);
+        if (Array.isArray(mealParts)) {
+          for (const p of mealParts) {
+            const s = String(p ?? "").trim();
+            if (s) raw.push(s);
+          }
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    if (cb.value.trim()) raw.push(cb.value.trim());
   });
   const inp =
     compose.querySelector("#lunchComposeFreeText") ?? compose.querySelector(".lunch-day-dish-input");

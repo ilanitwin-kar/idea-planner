@@ -2364,6 +2364,7 @@ body{
   line-height: 1.35;
   color: var(--heading);
 }
+.lunch-day-pick--meal .lunch-day-pick-label{ font-weight: 600; }
 .lunch-day-pick-cb{
   flex-shrink: 0;
   width: 1.25rem;
