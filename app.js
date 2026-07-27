@@ -1258,7 +1258,15 @@ function openLunchRecipeDialog(dishId) {
 function syncLunchTextEditDishList() {
   const dl = document.getElementById("lunchTextEditDishList");
   if (!dl) return;
-  dl.innerHTML = lunchPlanner.dishes.map((d) => `<option value="${escapeHtml(d.name)}"></option>`).join("");
+  const names = new Set();
+  for (const d of lunchPlanner.dishes) names.add(d.name);
+  for (const cat of LUNCH_STOCK_CATEGORIES) {
+    for (const it of lunchPlanner.homeStock[cat] ?? []) names.add(it.name);
+  }
+  dl.innerHTML = [...names]
+    .sort((a, b) => a.localeCompare(b, "he"))
+    .map((n) => `<option value="${escapeHtml(n)}"></option>`)
+    .join("");
 }
 
 function openLunchTextEditDialog(opts) {
@@ -1334,10 +1342,25 @@ function saveLunchTextEditDialog() {
   }
 }
 
-function lunchDishOptionsHtml() {
-  return lunchPlanner.dishes
-    .map((d) => `<option value="${escapeHtml(d.name)}"></option>`)
-    .join("");
+function lunchWeekSelectOptionsHtml() {
+  let html = `<option value="">בחרי מהרשימה…</option>`;
+  if (lunchPlanner.dishes.length) {
+    html += `<optgroup label="מנות שלי">`;
+    for (const d of lunchPlanner.dishes) {
+      html += `<option value="${escapeHtml(d.name)}">${escapeHtml(d.name)}</option>`;
+    }
+    html += `</optgroup>`;
+  }
+  for (const cat of LUNCH_STOCK_CATEGORIES) {
+    const items = lunchPlanner.homeStock[cat] ?? [];
+    if (!items.length) continue;
+    html += `<optgroup label="${escapeHtml(LUNCH_STOCK_LABELS[cat])}">`;
+    for (const it of items) {
+      html += `<option value="${escapeHtml(it.name)}">${escapeHtml(it.name)}</option>`;
+    }
+    html += `</optgroup>`;
+  }
+  return html;
 }
 
 function renderLunchWeekPanel() {
@@ -1351,7 +1374,7 @@ function renderLunchWeekPanel() {
   if (titleEl) titleEl.textContent = `${formatHebrewDayTitle(startD)} — ${formatHebrewDayTitle(endD)}`;
 
   const todayKey = localDateKey();
-  const datalistOpts = lunchDishOptionsHtml();
+  const selectOpts = lunchWeekSelectOptionsHtml();
   grid.innerHTML = "";
 
   for (const dateKey of weekDayKeys(weekStart)) {
@@ -1378,20 +1401,13 @@ function renderLunchWeekPanel() {
       <div class="lunch-day-head">${escapeHtml(formatHebrewDateLabel(dateKey))}</div>
       <ul class="lunch-day-list">${itemsHtml || '<li class="dialog-hint">עדיין אין מנות</li>'}</ul>
       <form class="lunch-day-add" data-date-key="${escapeHtml(dateKey)}" autocomplete="off">
-        <input class="input lunch-day-dish-input" type="text" maxlength="120" list="lunchDishNamesList" placeholder="בחרי מנה או כתבי חדשה…" required />
+        <select class="select lunch-day-select" aria-label="בחירה ממלאי או מנות">${selectOpts}</select>
+        <input class="input lunch-day-dish-input" type="text" maxlength="120" placeholder="או מנה חדשה…" />
         <button class="btn" type="submit">הוספה</button>
       </form>
     `;
     grid.appendChild(card);
   }
-
-  let dl = document.getElementById("lunchDishNamesList");
-  if (!dl) {
-    dl = document.createElement("datalist");
-    dl.id = "lunchDishNamesList";
-    document.body.appendChild(dl);
-  }
-  dl.innerHTML = datalistOpts;
 }
 
 function renderLunchStockPanel() {
@@ -3629,10 +3645,15 @@ function wireGlobalHandlers() {
     if (dayForm instanceof HTMLFormElement) {
       e.preventDefault();
       const dateKey = dayForm.dataset.dateKey;
+      const sel = dayForm.querySelector(".lunch-day-select");
       const inp = dayForm.querySelector(".lunch-day-dish-input");
-      const name = inp instanceof HTMLInputElement ? inp.value.trim() : "";
+      const fromInput = inp instanceof HTMLInputElement ? inp.value.trim() : "";
+      const fromSelect = sel instanceof HTMLSelectElement ? sel.value.trim() : "";
+      const name = fromInput || fromSelect;
+      if (sel instanceof HTMLSelectElement) sel.value = "";
       if (inp instanceof HTMLInputElement) inp.value = "";
-      if (dateKey) addLunchPlanForDay(dateKey, name);
+      if (dateKey && name) addLunchPlanForDay(dateKey, name);
+      else if (dateKey) toast("בחרי מהרשימה או כתבי מנה.");
       return;
     }
     const stockForm = e.target.closest("form.lunch-stock-add");

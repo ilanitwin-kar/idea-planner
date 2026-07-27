@@ -2266,6 +2266,11 @@ body{
   gap: 8px;
   align-items: center;
 }
+.lunch-day-add .lunch-day-select{
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
+}
 .lunch-day-add .input{ flex: 1 1 120px; min-width: 0; }
 .lunch-stock-grid{
   display: grid;
