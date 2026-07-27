@@ -131,7 +131,7 @@ export function partsSignature(parts) {
 
 export function findOrCreateMealFromParts(state, partsRaw) {
   const parts = normalizePartList(partsRaw);
-  if (!parts.length) return null;
+  if (parts.length <= 1) return null;
   const sig = partsSignature(parts);
   const existing = state.dishes.find((d) => partsSignature(dishParts(d)) === sig);
   if (existing) return { dish: existing, created: false };
@@ -230,6 +230,42 @@ export function addPlanEntry(state, weekStartKey, dateKey, dishId) {
   attachMealSnapshotToEntry(state, entry);
   week.days[dateKey].push(entry);
   return { entry, duplicateOnDateKey };
+}
+
+/** תכנון יום לפי רכיבים — «מנות שלי» מתעדכנת רק בארוחה (2+ רכיבים) */
+export function addPlanEntryFromParts(state, weekStartKey, dateKey, partsRaw) {
+  const parts = normalizePartList(partsRaw);
+  if (!parts.length) return null;
+  const week = ensureWeek(state, weekStartKey);
+  if (!week.days[dateKey]) week.days[dateKey] = [];
+  const entry = {
+    id: `plan_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`,
+    mealSnapshot: { name: mealTitleForParts(parts), parts: [...parts] },
+  };
+  if (parts.length > 1) {
+    const created = findOrCreateMealFromParts(state, parts);
+    if (!created?.dish) return null;
+    entry.dishId = created.dish.id;
+  }
+  week.days[dateKey].push(entry);
+  return { entry };
+}
+
+export function updatePlanEntryFromParts(state, weekStartKey, dateKey, entryId, partsRaw) {
+  const parts = normalizePartList(partsRaw);
+  if (!parts.length) return null;
+  const week = state.weeks[weekStartKey];
+  const entry = week?.days?.[dateKey]?.find((e) => e.id === entryId);
+  if (!entry) return null;
+  entry.mealSnapshot = { name: mealTitleForParts(parts), parts: [...parts] };
+  if (parts.length > 1) {
+    const created = findOrCreateMealFromParts(state, parts);
+    if (!created?.dish) return null;
+    entry.dishId = created.dish.id;
+  } else {
+    delete entry.dishId;
+  }
+  return { entry };
 }
 
 export function removePlanEntry(state, weekStartKey, dateKey, entryId) {

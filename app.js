@@ -64,7 +64,6 @@ import {
   weekStartKeyFromDateKey,
   weekDayKeys,
   planEntriesForDay,
-  findOrCreateDish,
   findOrCreateMealFromParts,
   normalizePartList,
   dishParts,
@@ -75,6 +74,8 @@ import {
   findMealPlannedElsewhereInWeek,
   planEntryMealParts,
   addPlanEntry,
+  addPlanEntryFromParts,
+  updatePlanEntryFromParts,
   removePlanEntry,
   addHomeStockItem,
   removeHomeStockItem,
@@ -1319,9 +1320,14 @@ function saveLunchTextEditDialog() {
     const dateKey = dlg.dataset.planDateKey;
     const entryId = dlg.dataset.planEntryId;
     const parts = normalizePartList(val.split(/\n/));
-    const created = findOrCreateMealFromParts(lunchPlanner, parts);
-    if (!created?.dish || !dateKey || !entryId) return;
-    const { dish } = created;
+    const updated = updatePlanEntryFromParts(
+      lunchPlanner,
+      lunchBrowseWeekStart,
+      dateKey,
+      entryId,
+      parts,
+    );
+    if (!updated?.entry || !dateKey || !entryId) return;
     const dup = findMealPlannedElsewhereInWeek(lunchPlanner, lunchBrowseWeekStart, parts, dateKey);
     if (dup) {
       const ok = confirm(
@@ -1329,7 +1335,6 @@ function saveLunchTextEditDialog() {
       );
       if (!ok) return;
     }
-    updatePlanEntryDish(lunchPlanner, lunchBrowseWeekStart, dateKey, entryId, dish.id);
     persistLunchPlanner();
     dlg.close();
     toast("הארוחה ביום עודכנה.");
@@ -1388,12 +1393,17 @@ function lunchComposeDialogRoot() {
   return dlg?.querySelector(".lunch-compose-dialog") ?? dlg;
 }
 
+function lunchCatalogMeals() {
+  return lunchPlanner.dishes.filter((d) => dishParts(d).length > 1);
+}
+
 function renderLunchDayPickerHtml(dateKey) {
   const sections = [];
-  if (lunchPlanner.dishes.length) {
+  const catalogMeals = lunchCatalogMeals();
+  if (catalogMeals.length) {
     const names = [];
     const seen = new Set();
-    for (const d of lunchPlanner.dishes) {
+    for (const d of catalogMeals) {
       for (const p of dishParts(d)) {
         const key = p.toLocaleLowerCase("he");
         if (seen.has(key)) continue;
@@ -1487,11 +1497,6 @@ function applyLunchDraftAdd(dateKey, compose) {
   const inp =
     compose?.querySelector("#lunchComposeFreeText") ?? compose?.querySelector(".lunch-day-dish-input");
   const freeText = inp instanceof HTMLInputElement ? inp.value.trim() : "";
-  let catalogChanged = false;
-  if (freeText) {
-    const r = findOrCreateDish(lunchPlanner, freeText);
-    if (r?.created) catalogChanged = true;
-  }
   let added = 0;
   for (const part of toAdd) {
     if (lunchDraftAddPart(dateKey, part)) added++;
@@ -1500,7 +1505,6 @@ function applyLunchDraftAdd(dateKey, compose) {
     toast("כבר בארוחה.");
     return;
   }
-  if (catalogChanged) persistLunchPlanner();
   clearLunchComposeDialogInputs(compose);
   refreshLunchComposeDialogTray(dateKey);
   const picker = document.getElementById("lunchComposePicker");
@@ -1519,8 +1523,6 @@ function saveLunchComposeDialog() {
     toast("אין רכיבים.");
     return;
   }
-  for (const p of parts) findOrCreateDish(lunchPlanner, p);
-  persistLunchPlanner();
   if (!addLunchPlanForDay(dateKey, parts)) return;
   lunchDraftClear(dateKey);
   dlg.close();
@@ -1628,11 +1630,11 @@ function renderLunchStockPanel() {
 function renderLunchDishesPanel() {
   const list = document.getElementById("lunchDishesList");
   if (!list) return;
-  if (!lunchPlanner.dishes.length) {
+  if (!lunchCatalogMeals().length) {
     list.innerHTML = UI_EMPTY;
     return;
   }
-  list.innerHTML = lunchPlanner.dishes
+  list.innerHTML = lunchCatalogMeals()
     .map((d) => {
       const parts = dishParts(d);
       const hasRec = !!getRecipeForDish(lunchPlanner, d.id);
@@ -1706,9 +1708,8 @@ function addLunchPlanForDay(dateKey, partsRaw) {
     return false;
   }
 
-  const created = findOrCreateMealFromParts(lunchPlanner, parts);
-  if (!created?.dish) return false;
-  const { dish, created: isNew } = created;
+  const created = parts.length > 1 ? findOrCreateMealFromParts(lunchPlanner, parts) : null;
+  if (parts.length > 1 && !created?.dish) return false;
 
   const dup = findMealPlannedElsewhereInWeek(lunchPlanner, weekStart, parts, dateKey);
   if (dup) {
@@ -1717,11 +1718,16 @@ function addLunchPlanForDay(dateKey, partsRaw) {
     );
     if (!ok) return false;
   }
-  addPlanEntry(lunchPlanner, weekStart, dateKey, dish.id);
+  const added = addPlanEntryFromParts(lunchPlanner, weekStart, dateKey, parts);
+  if (!added?.entry) return false;
   persistLunchPlanner();
-  if (parts.length > 1) toast(`נשמרה ארוחה (${parts.length} רכיבים) ליום.`);
-  else if (isNew) toast("נוסף ליום ול«מנות שלי».");
-  else if (dup) toast("נוסף — שימי לב שבישלת כבר השבוע.");
+  if (parts.length > 1) {
+    toast(
+      created?.created
+        ? `נשמרה ארוחה (${parts.length} רכיבים) — גם ב«מנות שלי».`
+        : `נשמרה ארוחה (${parts.length} רכיבים) ליום.`,
+    );
+  } else if (dup) toast("נוסף ליום.");
   else toast("נשמר.");
   render();
   return true;
@@ -3892,18 +3898,6 @@ function wireGlobalHandlers() {
       lunchDraftRemovePart(draftRemove.dataset.dateKey, Number(draftRemove.dataset.partIndex));
       refreshLunchComposeDialogTray(draftRemove.dataset.dateKey);
     }
-  });
-
-  document.getElementById("lunchDishAddForm")?.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const name = document.getElementById("lunchDishNewName")?.value?.trim();
-    if (!name) return;
-    const r = findOrCreateDish(lunchPlanner, name);
-    if (!r) return;
-    persistLunchPlanner();
-    document.getElementById("lunchDishNewName").value = "";
-    toast(r.created ? "נוסף לרשימת המנות." : "המנה כבר ברשימה.");
-    render();
   });
 
   document.getElementById("lunchRecipeSave")?.addEventListener("click", () => {
