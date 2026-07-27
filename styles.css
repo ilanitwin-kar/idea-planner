@@ -2173,7 +2173,34 @@ body{
   color: var(--danger, #b00020);
 }
 
-.lunch-tabs{ margin-bottom: 14px; }
+.lunch-tabs{
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 4px 2px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  max-width: 100%;
+  scrollbar-width: thin;
+}
+.lunch-tabs .tab{
+  scroll-snap-align: start;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.lunch-tabs-hint{
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: -6px 0 10px;
+  text-align: center;
+  display: none;
+}
+@media (max-width: 920px){
+  .lunch-tabs-hint{ display: block; }
+}
 .lunch-panel.hidden{ display: none; }
 .lunch-week-nav{
   display: flex;

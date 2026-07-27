@@ -1232,6 +1232,9 @@ function setLunchPlannerTab(tab) {
     const key = id.toLowerCase();
     document.getElementById(`lunchPanel${id}`)?.classList.toggle("hidden", lunchPlannerTab !== key);
   }
+  queueMicrotask(() => {
+    document.querySelector(".lunch-tab.active")?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  });
 }
 
 function openLunchRecipeDialog(dishId) {
