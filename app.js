@@ -90,6 +90,8 @@ import {
 
 const APP_DISPLAY_NAME = "מרכז הרעיונות של אילנית";
 
+const UI_EMPTY = `<div class="empty"></div>`;
+
 const STORAGE_KEY = "idea-planner:v1";
 const CLOUD_DEBOUNCE_MS = 400;
 
@@ -738,7 +740,7 @@ function renderAggregatedPlanSections(container, mode) {
     if (datedSections.length === 0 && noDateTasks.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty plan-empty";
-      empty.innerHTML = `<div class="empty-text">אין תתי־משימות פתוחות עם תזמון. הוסיפי תתי־משימות ותאריכים במסך הרעיונות (לשונית משימות או לוח שנה).</div>`;
+      empty.innerHTML = UI_EMPTY;
       container.appendChild(empty);
       return totalOpen;
     }
@@ -800,7 +802,7 @@ function renderAggregatedPlanSections(container, mode) {
   if (datedSections.length === 0 && noDateTasks.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty plan-empty";
-    empty.innerHTML = `<div class="empty-text">עדיין לא סימנת תתי־משימות כבוצע. כשתסמני V ב«עתידי» או במסך הרעיונות — הן יופיעו כאן.</div>`;
+    empty.innerHTML = UI_EMPTY;
     container.appendChild(empty);
     return totalDone;
   }
@@ -1003,7 +1005,7 @@ function renderDayItemsList(container, dateKey) {
   if (items.length === 0) {
     const div = document.createElement("div");
     div.className = "empty";
-    div.innerHTML = `<div class="empty-text">אין משימות. הוסיפי שורה למעלה.</div>`;
+    div.innerHTML = UI_EMPTY;
     container.appendChild(div);
     return;
   }
@@ -1377,14 +1379,116 @@ function dishLabelForSelect(dish) {
   return `${mealTitleForParts(parts)} (${parts.join(", ")})`;
 }
 
-function partsFromSelectOrText(selectVal, textVal) {
-  const text = String(textVal ?? "").trim();
-  const sel = String(selectVal ?? "").trim();
-  if (text) return normalizePartList([text]);
-  if (!sel) return [];
-  const byName = lunchPlanner.dishes.find((d) => dishLabelForSelect(d) === sel || d.name === sel);
-  if (byName) return [...dishParts(byName)];
-  return normalizePartList([sel]);
+function lunchComposeForDate(dateKey) {
+  let found = null;
+  document.querySelectorAll(".lunch-day-compose").forEach((el) => {
+    if (el.dataset.dateKey === dateKey) found = el;
+  });
+  return found;
+}
+
+function renderLunchDayPickerHtml(dateKey) {
+  const sections = [];
+  if (lunchPlanner.dishes.length) {
+    const names = [];
+    const seen = new Set();
+    for (const d of lunchPlanner.dishes) {
+      for (const p of dishParts(d)) {
+        const key = p.toLocaleLowerCase("he");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        names.push(p);
+      }
+    }
+    names.sort((a, b) => a.localeCompare(b, "he"));
+    if (names.length) sections.push({ title: "מנות שלי", names });
+  }
+  for (const cat of LUNCH_STOCK_CATEGORIES) {
+    const items = lunchPlanner.homeStock[cat] ?? [];
+    if (!items.length) continue;
+    sections.push({
+      title: LUNCH_STOCK_LABELS[cat],
+      names: items.map((it) => it.name).sort((a, b) => a.localeCompare(b, "he")),
+    });
+  }
+  if (!sections.length) {
+    return `<div class="lunch-day-picker lunch-day-picker--empty"></div>`;
+  }
+  const body = sections
+    .map((sec) => {
+      const rows = sec.names
+        .map(
+          (name) =>
+            `<label class="lunch-day-pick"><input type="checkbox" class="lunch-day-pick-cb" data-date-key="${escapeHtml(dateKey)}" value="${escapeHtml(name)}" /><span class="lunch-day-pick-label">${escapeHtml(name)}</span></label>`,
+        )
+        .join("");
+      return `<div class="lunch-day-pick-group"><div class="lunch-day-pick-group-title">${escapeHtml(sec.title)}</div>${rows}</div>`;
+    })
+    .join("");
+  return `<div class="lunch-day-picker"><div class="lunch-day-pick-scroll">${body}</div></div>`;
+}
+
+function gatherLunchPartsFromCompose(compose) {
+  if (!compose) return [];
+  const raw = [];
+  compose.querySelectorAll("input.lunch-day-pick-cb:checked").forEach((cb) => {
+    if (cb instanceof HTMLInputElement && cb.value.trim()) raw.push(cb.value.trim());
+  });
+  const inp = compose.querySelector(".lunch-day-dish-input");
+  const text = inp instanceof HTMLInputElement ? inp.value.trim() : "";
+  if (text) raw.push(text);
+  return normalizePartList(raw);
+}
+
+function refreshLunchDayComposeArea(dateKey) {
+  const compose = lunchComposeForDate(dateKey);
+  if (!compose) {
+    render();
+    return;
+  }
+  const oldTray = compose.querySelector(".lunch-day-tray, .lunch-day-tray--empty");
+  const trayWrap = document.createElement("div");
+  trayWrap.innerHTML = renderLunchDayTrayHtml(dateKey);
+  const newTray = trayWrap.firstElementChild;
+  if (oldTray && newTray) oldTray.replaceWith(newTray);
+
+  const oldPicker = compose.querySelector(".lunch-day-picker, .lunch-day-picker--empty, .lunch-day-picker-empty");
+  const pickWrap = document.createElement("div");
+  pickWrap.innerHTML = renderLunchDayPickerHtml(dateKey);
+  const newPicker = pickWrap.firstElementChild;
+  if (oldPicker && newPicker) oldPicker.replaceWith(newPicker);
+
+  syncLunchDayCommitButton(dateKey);
+}
+
+function applyLunchDraftAdd(dateKey, compose) {
+  const toAdd = gatherLunchPartsFromCompose(compose);
+  if (!toAdd.length) {
+    toast("אין מה להוסיף.");
+    return;
+  }
+  const inp = compose?.querySelector(".lunch-day-dish-input");
+  const freeText = inp instanceof HTMLInputElement ? inp.value.trim() : "";
+  let catalogChanged = false;
+  if (freeText) {
+    const r = findOrCreateDish(lunchPlanner, freeText);
+    if (r?.created) catalogChanged = true;
+  }
+  let added = 0;
+  for (const part of toAdd) {
+    if (lunchDraftAddPart(dateKey, part)) added++;
+  }
+  if (!added) {
+    toast("כבר בארוחה.");
+    return;
+  }
+  if (catalogChanged) persistLunchPlanner();
+  compose?.querySelectorAll("input.lunch-day-pick-cb:checked").forEach((cb) => {
+    if (cb instanceof HTMLInputElement) cb.checked = false;
+  });
+  if (inp instanceof HTMLInputElement) inp.value = "";
+  refreshLunchDayComposeArea(dateKey);
+  toast(added === 1 ? "נוסף." : `${added} נוספו.`);
 }
 
 function lunchDraftGet(dateKey) {
@@ -1416,7 +1520,7 @@ function lunchDraftClear(dateKey) {
 function renderLunchDayTrayHtml(dateKey) {
   const parts = lunchDraftGet(dateKey);
   if (!parts.length) {
-    return `<div class="lunch-day-tray lunch-day-tray--empty dialog-hint">בחרי/כתבי רכיב → «הוספה» (כמה פעמים) → בסיום «שמירת ארוחה ליום».</div>`;
+    return `<div class="lunch-day-tray lunch-day-tray--empty"></div>`;
   }
   const chips = parts
     .map(
@@ -1425,67 +1529,37 @@ function renderLunchDayTrayHtml(dateKey) {
     )
     .join("");
   const preview = mealTitleForParts(parts);
-  return `<div class="lunch-day-tray"><div class="lunch-day-tray-label">רכיבים לארוחה (עדיין לא נשמר):</div><div class="lunch-day-tray-preview">${escapeHtml(preview === "ארוחה" && parts.length > 1 ? `${parts.length} רכיבים` : preview)}</div><div class="lunch-draft-chips">${chips}</div></div>`;
+  return `<div class="lunch-day-tray"><div class="lunch-day-tray-preview">${escapeHtml(preview === "ארוחה" && parts.length > 1 ? `${parts.length} רכיבים` : preview)}</div><div class="lunch-draft-chips">${chips}</div></div>`;
 }
 
 function syncLunchDayCommitButton(dateKey) {
-  const compose = document.querySelector(`.lunch-day-compose[data-date-key="${CSS.escape(dateKey)}"]`);
+  const compose = lunchComposeForDate(dateKey);
   const btn = compose?.querySelector("[data-action='lunch-day-commit']");
   if (btn instanceof HTMLButtonElement) {
-    btn.disabled = lunchDraftGet(dateKey).length === 0;
+    btn.classList.toggle("is-ready", lunchDraftGet(dateKey).length > 0);
   }
 }
 
 function commitLunchDayMeal(dateKey, composeEl) {
   const parts = normalizePartList(lunchDraftGet(dateKey));
   if (!parts.length) {
-    toast("קודם «הוספה» לכל הרכיבים, ורק אז «שמירת ארוחה ליום».");
+    toast("אין רכיבים.");
     return;
   }
   addLunchPlanForDay(dateKey, parts);
   lunchDraftClear(dateKey);
   if (composeEl) {
-    const sel = composeEl.querySelector(".lunch-day-select");
     const inp = composeEl.querySelector(".lunch-day-dish-input");
-    if (sel instanceof HTMLSelectElement) sel.value = "";
     if (inp instanceof HTMLInputElement) inp.value = "";
+    composeEl.querySelectorAll("input.lunch-day-pick-cb:checked").forEach((cb) => {
+      if (cb instanceof HTMLInputElement) cb.checked = false;
+    });
   }
-  syncLunchDayCommitButton(dateKey);
+  refreshLunchDayComposeArea(dateKey);
 }
 
 function refreshLunchDayTray(dateKey) {
-  const compose = document.querySelector(`.lunch-day-compose[data-date-key="${dateKey}"]`);
-  if (!compose) {
-    render();
-    return;
-  }
-  const oldTray = compose.querySelector(".lunch-day-tray, .lunch-day-tray--empty");
-  const wrap = document.createElement("div");
-  wrap.innerHTML = renderLunchDayTrayHtml(dateKey);
-  const newTray = wrap.firstElementChild;
-  if (oldTray && newTray) oldTray.replaceWith(newTray);
-  syncLunchDayCommitButton(dateKey);
-}
-
-function lunchWeekSelectOptionsHtml() {
-  let html = `<option value="">בחרי מהרשימה…</option>`;
-  if (lunchPlanner.dishes.length) {
-    html += `<optgroup label="מנות שלי">`;
-    for (const d of lunchPlanner.dishes) {
-      html += `<option value="${escapeHtml(dishLabelForSelect(d))}">${escapeHtml(dishLabelForSelect(d))}</option>`;
-    }
-    html += `</optgroup>`;
-  }
-  for (const cat of LUNCH_STOCK_CATEGORIES) {
-    const items = lunchPlanner.homeStock[cat] ?? [];
-    if (!items.length) continue;
-    html += `<optgroup label="${escapeHtml(LUNCH_STOCK_LABELS[cat])}">`;
-    for (const it of items) {
-      html += `<option value="${escapeHtml(it.name)}">${escapeHtml(it.name)}</option>`;
-    }
-    html += `</optgroup>`;
-  }
-  return html;
+  refreshLunchDayComposeArea(dateKey);
 }
 
 function renderLunchWeekPanel() {
@@ -1499,7 +1573,6 @@ function renderLunchWeekPanel() {
   if (titleEl) titleEl.textContent = `${formatHebrewDayTitle(startD)} — ${formatHebrewDayTitle(endD)}`;
 
   const todayKey = localDateKey();
-  const selectOpts = lunchWeekSelectOptionsHtml();
   grid.innerHTML = "";
 
   for (const dateKey of weekDayKeys(weekStart)) {
@@ -1510,15 +1583,15 @@ function renderLunchWeekPanel() {
 
     card.innerHTML = `
       <div class="lunch-day-head">${escapeHtml(formatHebrewDateLabel(dateKey))}</div>
-      <ul class="lunch-day-list">${itemsHtml || '<li class="dialog-hint">עדיין אין מנות</li>'}</ul>
+      <ul class="lunch-day-list">${itemsHtml || ""}</ul>
       <div class="lunch-day-compose" data-date-key="${escapeHtml(dateKey)}">
         ${renderLunchDayTrayHtml(dateKey)}
+        ${renderLunchDayPickerHtml(dateKey)}
         <div class="lunch-day-add-row">
-          <select class="select lunch-day-select" aria-label="בחירה ממלאי או מנות">${selectOpts}</select>
-          <input class="input lunch-day-dish-input" type="text" maxlength="120" placeholder="או טקסט חופשי…" />
-          <button type="button" class="btn btn-ghost" data-action="lunch-draft-add" data-date-key="${escapeHtml(dateKey)}">הוספה</button>
+          <input class="input lunch-day-dish-input" type="text" maxlength="120" placeholder="טקסט חופשי…" />
+          <button type="button" class="btn btn-ghost lunch-day-draft-add-btn" data-action="lunch-draft-add" data-date-key="${escapeHtml(dateKey)}">הוספה</button>
         </div>
-        <button type="button" class="btn lunch-day-commit-btn" data-action="lunch-day-commit" data-date-key="${escapeHtml(dateKey)}"${lunchDraftGet(dateKey).length ? "" : " disabled"}>שמירת ארוחה ליום</button>
+        <button type="button" class="btn lunch-day-commit-btn${lunchDraftGet(dateKey).length ? " is-ready" : ""}" data-action="lunch-day-commit" data-date-key="${escapeHtml(dateKey)}">שמירת ארוחה ליום</button>
       </div>
     `;
     grid.appendChild(card);
@@ -1559,7 +1632,7 @@ function renderLunchDishesPanel() {
   const list = document.getElementById("lunchDishesList");
   if (!list) return;
   if (!lunchPlanner.dishes.length) {
-    list.innerHTML = `<div class="empty"><div class="empty-text">אין עדיין מנות — אפשר להוסיף כאן או מתוך תכנון השבוע.</div></div>`;
+    list.innerHTML = UI_EMPTY;
     return;
   }
   list.innerHTML = lunchPlanner.dishes
@@ -1595,7 +1668,7 @@ function renderLunchRecipesPanel() {
   const root = document.getElementById("lunchRecipesList");
   if (!root) return;
   if (!lunchPlanner.recipes.length) {
-    root.innerHTML = `<div class="empty"><div class="empty-text">אין מתכונים עדיין — לחצי «מתכון» ליד מנה.</div></div>`;
+    root.innerHTML = UI_EMPTY;
     return;
   }
   root.innerHTML = lunchPlanner.recipes
@@ -1708,7 +1781,7 @@ function renderTodayTasksPage() {
     if (tasks.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty plan-empty";
-      empty.innerHTML = `<div class="empty-text">אין תתי־משימות מתוזמנות להיום מתוך הרעיונות.</div>`;
+      empty.innerHTML = UI_EMPTY;
       ideasRoot.appendChild(empty);
     } else {
       // one "date block" for today, grouped by task
@@ -1782,7 +1855,7 @@ function renderDailyMasterPage() {
   if (rows.length === 0) {
     const div = document.createElement("div");
     div.className = "empty";
-    div.innerHTML = `<div class="empty-text">עדיין אין משימות ב«היום שלי». הוסיפי משימות שם — והן יופיעו כאן ממוספרות.</div>`;
+    div.innerHTML = UI_EMPTY;
     container.appendChild(div);
     if (progEl) progEl.textContent = "";
     return;
@@ -1951,8 +2024,7 @@ function renderDailyTimingPage() {
   if (entries.length === 0) {
     const div = document.createElement("div");
     div.className = "empty";
-    div.innerHTML =
-      '<div class="empty-text">עדיין אין מדידות. מ«היום שלי» או «משימות יומיומיות» לחצי על ⋮ ליד משימה ובחרי «טיימר».</div>';
+    div.innerHTML = UI_EMPTY;
     root.appendChild(div);
     return;
   }
@@ -2218,17 +2290,17 @@ function renderPantryPage() {
     const div = document.createElement("div");
     div.className = "empty";
     if (!anyItems) {
-      div.innerHTML = `<div class="empty-text">אין עדיין פריטים ברשימה. למעלה אפשר להוסיף מוצר — שם, מיקום, כמות ויחידת מידה.</div>`;
+      div.innerHTML = UI_EMPTY;
     } else if (filtersOn) {
-      div.innerHTML = `<div class="empty-text">אין פריטים שמתאימים לסינון הנוכחי (מיקום או ⋮). נסי לשנות את הסינון או לאפס את תפריט ה⋮.</div>`;
+      div.innerHTML = UI_EMPTY;
     } else {
-      div.innerHTML = `<div class="empty-text">אין פריטים להצגה.</div>`;
+      div.innerHTML = UI_EMPTY;
     }
     root.appendChild(div);
   } else if (displayed.length === 0) {
     const div = document.createElement("div");
     div.className = "empty";
-    div.innerHTML = `<div class="empty-text">אין פריטים התואמים לחיפוש. נסי מילה אחרת או מחקי את הטקסט בשדה «חיפוש ברשימה».</div>`;
+    div.innerHTML = UI_EMPTY;
     root.appendChild(div);
   } else {
     for (const it of displayed) {
@@ -2590,7 +2662,7 @@ function renderCalendar() {
     list.className = "cal-list";
     const items = all.filter((x) => sameDay(startOfDay(new Date(x.startsAt)), day));
     if (items.length === 0) {
-      list.innerHTML = `<div class="empty"><div class="empty-text">אין תתי־משימות מתוזמנות ליום הזה.</div></div>`;
+      list.innerHTML = UI_EMPTY;
     } else {
       for (const it of items) list.appendChild(renderCalendarItem(it));
     }
@@ -2610,7 +2682,7 @@ function renderCalendar() {
       return d >= start && d < end;
     });
     if (items.length === 0) {
-      list.innerHTML = `<div class="empty"><div class="empty-text">אין תתי־משימות מתוזמנות בשבוע הזה.</div></div>`;
+      list.innerHTML = UI_EMPTY;
     } else {
       for (const it of items) list.appendChild(renderCalendarItem(it));
     }
@@ -2684,7 +2756,7 @@ function renderIdeas() {
   if (state.ideas.length === 0) {
     const div = document.createElement("div");
     div.className = "empty";
-    div.innerHTML = `<div class="empty-title">אין רעיונות עדיין</div><div class="empty-text">הוסיפי רעיון ראשון כדי להתחיל לבנות אסטרטגיה.</div>`;
+    div.innerHTML = UI_EMPTY;
     els.ideasList.appendChild(div);
     return;
   }
@@ -2777,7 +2849,7 @@ function renderTasksAll() {
   if (grouped.length === 0) {
     const div = document.createElement("div");
     div.className = "empty";
-    div.innerHTML = `<div class="empty-text">אין תתי־משימות עם תאריך/שעה להצגה.</div>`;
+    div.innerHTML = UI_EMPTY;
     els.tasksListAll.appendChild(div);
     return;
   }
@@ -2898,7 +2970,7 @@ function renderTasks(idea) {
   if ((idea.tasks ?? []).length === 0) {
     const div = document.createElement("div");
     div.className = "empty";
-    div.innerHTML = `<div class="empty-title">אין משימות עדיין</div><div class="empty-text">הוסיפי משימה ואז צרי לה תתי־משימות עם תאריך ושעה.</div>`;
+    div.innerHTML = UI_EMPTY;
     els.tasksList.appendChild(div);
     return;
   }
@@ -2919,16 +2991,12 @@ function renderTasks(idea) {
           <span class="pill">תתי־משימות: ${doneSubs}/${total}</span>
         </div>
         <div class="task-details ${isOpen ? "" : "hidden"}" data-task-details="${task.id}">
-          <div class="subtasks-header">
-            <div>תתי־משימות (סימון המשימה מתבצע אוטומטית כשכולן מסומנות)</div>
-          </div>
           <form class="add-row add-row--subtask" data-add-subtask-form="${task.id}" autocomplete="off">
             <input class="input" name="subtaskTitle" type="text" placeholder="תת־משימה חדשה…" maxlength="160" required />
             <label class="dt-label"><span class="dt-label-text">התחלה</span><input class="dt" name="subtaskStart" type="datetime-local" title="התחלה" /></label>
             <label class="dt-label"><span class="dt-label-text">סיום (רשות)</span><input class="dt" name="subtaskEnd" type="datetime-local" title="סיום (אופציונלי)" /></label>
             <button class="btn btn--subtask-add" type="submit">הוספת תת־משימה</button>
           </form>
-          <div class="subtask-form-hint">אפשר למלא רק כותרת — התאריכים עוזרים ללוח השנה והתזכורות. לסיום לוחצים על הכפתור או Enter בשדה הטקסט.</div>
           <div class="subtasks-list" data-subtasks-list="${task.id}"></div>
         </div>
       </div>
@@ -3399,8 +3467,7 @@ function refreshCloudBackupPanel() {
 
   if (!isCloudBackupConfigured()) {
     noCfg.classList.remove("hidden");
-    userLine.textContent =
-      "כפתורי ההתחברות למטה יופעלו אחרי שמשתני ‎VITE_FIREBASE_*‎ ייטענו (ראי ההסבר המודגש).";
+    userLine.textContent = "";
     signIn?.classList.remove("hidden");
     signOut?.classList.add("hidden");
     if (signIn) {
@@ -3427,7 +3494,7 @@ function refreshCloudBackupPanel() {
     if (backupNow) backupNow.disabled = false;
     if (restore) restore.disabled = false;
   } else {
-    userLine.textContent = "לא מחוברת — לחצי «התחברות Google» כדי לגבות או לשחזר.";
+    userLine.textContent = "לא מחוברת";
     signIn?.classList.remove("hidden");
     signOut?.classList.add("hidden");
     if (backupNow) backupNow.disabled = true;
@@ -3795,29 +3862,8 @@ function wireGlobalHandlers() {
     }
     const draftAdd = e.target.closest("[data-action='lunch-draft-add']");
     if (draftAdd?.dataset.dateKey) {
-      const compose = draftAdd.closest(".lunch-day-compose");
-      const sel = compose?.querySelector(".lunch-day-select");
-      const inp = compose?.querySelector(".lunch-day-dish-input");
-      const toAdd = partsFromSelectOrText(
-        sel instanceof HTMLSelectElement ? sel.value : "",
-        inp instanceof HTMLInputElement ? inp.value : "",
-      );
-      if (!toAdd.length) {
-        toast("בחרי מהרשימה או כתבי טקסט.");
-        return;
-      }
-      let added = 0;
-      for (const part of toAdd) {
-        if (lunchDraftAddPart(draftAdd.dataset.dateKey, part)) added++;
-      }
-      if (!added) {
-        toast("הרכיבים כבר ברשימה.");
-        return;
-      }
-      if (sel instanceof HTMLSelectElement) sel.value = "";
-      if (inp instanceof HTMLInputElement) inp.value = "";
-      refreshLunchDayTray(draftAdd.dataset.dateKey);
-      toast(added === 1 ? "רכיב נוסף — המשיכי «הוספה» או «שמירת ארוחה ליום»." : `${added} רכיבים נוספו.`);
+      const compose = draftAdd.closest(".lunch-day-compose") ?? lunchComposeForDate(draftAdd.dataset.dateKey);
+      applyLunchDraftAdd(draftAdd.dataset.dateKey, compose);
       return;
     }
     const dayCommit = e.target.closest("[data-action='lunch-day-commit']");

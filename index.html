@@ -90,7 +90,6 @@
     <dialog id="settingsDialog" class="dialog">
       <form method="dialog" class="dialog-inner">
         <div class="dialog-title">הגדרות</div>
-        <div class="dialog-text">תצוגת לוח השנה.</div>
         <div class="section">
           <div class="section-title">לוח שנה</div>
           <label class="checkline">תצוגת ברירת מחדל:
@@ -102,18 +101,13 @@
           </label>
         </div>
         <div class="section">
-          <div class="section-title">גיבוי לענן (אופציונלי)</div>
-          <p class="dialog-text dialog-text--tight">
-            הנתונים נשמרים אצלך בדפדפן. אפשר להעלות עותק ל-Firestore תחת חשבון Google — בלי שינוי אוטומטי במכשיר (רק בלחיצה על «שחזור»).
-          </p>
-          <p id="cloudBackupNoConfig" class="dialog-hint cloud-backup-no-env hidden">
-            אין תצורת Firebase באפליקציה. <strong>בפיתוח:</strong> קובץ ‎.env.local‎ בשורש הפרויקט (לפי ‎.env.example‎) והפעלה מחדש של ‎npm run dev‎. <strong>ב־Vercel:</strong> Settings → Environment Variables — הוסיפי ‎FIREBASE_API_KEY‎, ‎FIREBASE_AUTH_DOMAIN‎, ‎FIREBASE_PROJECT_ID‎, ‎FIREBASE_APP_ID‎ (או אותם שמות עם ‎VITE_‎), סמני Production, ואז <strong>Redeploy</strong> (הערכים נכנסים בזמן build).
-          </p>
+          <div class="section-title">גיבוי לענן</div>
+          <p id="cloudBackupNoConfig" class="dialog-hint cloud-backup-no-env hidden">חסרה תצורת Firebase.</p>
           <div id="cloudBackupPanel" class="cloud-backup-panel">
             <p id="cloudBackupUserLine" class="dialog-text dialog-text--tight">—</p>
             <label class="checkline">
               <input id="cloudAutoBackup" type="checkbox" />
-              גיבוי אוטומטי קליל אחרי שינוי (עיכוב ~חצי שנייה)
+              גיבוי אוטומטי אחרי שינוי
             </label>
             <div class="dialog-actions dialog-actions--wrap">
               <button id="cloudSignInBtn" class="btn" type="button">התחברות Google</button>
@@ -134,7 +128,6 @@
     <dialog id="exportDialog" class="dialog">
       <form method="dialog" class="dialog-inner">
         <div class="dialog-title">ייצוא / שיתוף רעיון</div>
-        <div class="dialog-text">אפשר להעתיק, לשלוח בווטסאפ/מייל, או להדפיס.</div>
         <textarea id="exportText" class="textarea" rows="10" readonly></textarea>
         <div class="dialog-actions">
           <button id="exportCopy" class="btn" type="button">העתקה</button>
@@ -150,7 +143,6 @@
     <dialog id="dailyEditDialog" class="dialog">
       <form method="dialog" class="dialog-inner" id="dailyEditForm">
         <div class="dialog-title">עריכת משימה</div>
-        <div class="dialog-text">עדכון הטקסט נשמר ביומן היומי.</div>
         <input id="dailyEditInput" class="input daily-edit-input" type="text" maxlength="200" autocomplete="off" />
         <div class="dialog-actions">
           <button id="dailyEditSave" class="btn" type="button">שמירה</button>
@@ -177,12 +169,7 @@
     <dialog id="pantryImportDialog" class="dialog dialog--wide">
       <div class="dialog-inner">
         <div class="dialog-title">ייבוא למלאי מקבלה / צילום</div>
-        <details class="help-collapsible">
-          <summary class="help-collapsible-summary">הסבר</summary>
-          <p id="pantryImportStatus" class="dialog-text dialog-text--tight">
-            ניתן להעלות PDF (למשל תעודת משלוח) או תמונה (צילום מסך מהאתר). התוצאות לבדיקה לפני שמירה.
-          </p>
-        </details>
+        <p id="pantryImportStatus" class="dialog-hint" aria-live="polite"></p>
         <input
           type="file"
           id="pantryImportFile"
@@ -215,7 +202,7 @@
           </table>
         </div>
         <details id="pantryImportRawWrap" class="pantry-import-raw-wrap hidden">
-          <summary class="pantry-import-raw-summary">טקסט שחולץ (לעזרה באבחון)</summary>
+          <summary class="pantry-import-raw-summary">טקסט שחולץ</summary>
           <pre id="pantryImportRaw" class="pantry-import-raw" dir="auto"></pre>
         </details>
         <div class="dialog-actions">
@@ -228,14 +215,6 @@
     <dialog id="pantryBarcodeDialog" class="dialog dialog--wide">
       <div class="dialog-inner">
         <div class="dialog-title">הוספה לפי ברקוד</div>
-        <details class="help-collapsible">
-          <summary class="help-collapsible-summary">הסבר</summary>
-          <p class="dialog-text pantry-bc-hint dialog-text--tight">
-            כוונו את המצלמה אל הברקוד על האריזה, או הקלידי את המספר מהאריזה ולחצו «חיפוש שם». השם מגיע מ־
-            <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener noreferrer">Open Food Facts</a>
-            (אינטרנט) — לא תמיד קיים או בעברית; אפשר לערוך לפני השמירה. הכמות תמיד שלכם.
-          </p>
-        </details>
         <div id="pantryBarcodeVideoWrap" class="pantry-bc-video-wrap hidden">
           <video id="pantryBarcodeVideo" class="pantry-bc-video" playsinline muted></video>
         </div>
@@ -318,12 +297,6 @@
       <aside class="panel ideas-panel" aria-label="רעיונות">
         <div class="panel-header">
           <div class="panel-title">רעיונות</div>
-          <details class="help-collapsible panel-hint">
-            <summary class="help-collapsible-summary">הסבר</summary>
-            <div class="help-collapsible-body">
-              <div class="dialog-text dialog-text--tight">בחרי רעיון כדי לבנות אסטרטגיה ומשימות.</div>
-            </div>
-          </details>
         </div>
 
         <div id="homeSummary" class="home-summary" aria-label="סיכום">
@@ -370,10 +343,7 @@
           <button id="tabTasks" class="tab" type="button" role="tab" aria-selected="false">רשימת תתי משימות</button>
         </div>
 
-        <div id="emptyState" class="empty">
-          <div class="empty-title">נתחיל?</div>
-          <div class="empty-text">הוסיפי רעיון או בחרי רעיון קיים כדי ליצור משימות ותתי־משימות עם תאריך ושעה.</div>
-        </div>
+        <div id="emptyState" class="empty hidden"></div>
 
         <div id="ideaView" class="hidden" role="tabpanel" aria-label="רעיון">
           <div class="mobile-header">
@@ -417,12 +387,6 @@
         <div id="calendarView" class="hidden" role="tabpanel" aria-label="לוח שנה">
           <div class="panel-header">
             <div class="panel-title">לוח שנה</div>
-            <details class="help-collapsible panel-hint">
-              <summary class="help-collapsible-summary">הסבר</summary>
-              <div class="help-collapsible-body">
-                <div class="dialog-text dialog-text--tight">כל תתי־המשימות מכל הרעיונות מרוכזות לפי זמן.</div>
-              </div>
-            </details>
           </div>
 
           <div class="calendar-controls">
@@ -457,12 +421,6 @@
         <div id="tasksView" class="hidden" role="tabpanel" aria-label="רשימת תתי משימות">
           <div class="panel-header">
             <div class="panel-title">רשימת תתי משימות</div>
-            <details class="help-collapsible panel-hint">
-              <summary class="help-collapsible-summary">הסבר</summary>
-              <div class="help-collapsible-body">
-                <div class="dialog-text dialog-text--tight">כאן רואים לפי משימה את כל תתי־המשימות שלה (עם תאריך/שעה) ומסמנים ✓ כשבוצע.</div>
-              </div>
-            </details>
           </div>
           <div class="section">
             <input id="tasksSearch" class="input" type="text" placeholder="חיפוש…" />
@@ -496,17 +454,6 @@
           <input id="dailyTodayInput" class="input" type="text" maxlength="200" placeholder="משימה או מה לקנות…" />
           <button class="btn" type="submit">הוספה</button>
         </form>
-        <details class="help-collapsible daily-today-hint">
-          <summary class="help-collapsible-summary">הסבר: קניות לפי מקום</summary>
-          <div class="help-collapsible-body">
-            <p class="dialog-text dialog-text--tight">
-              <strong>קניות לפי מקום:</strong> בשלב ראשון בוחרים «כותרת מקום», כותבים את שם החנות (למשל מכבי פארם) ולוחצים «הוספה».
-              מיד אחרי זה הטופס עובר ל«משימה / לקנות» והמקום החדש כבר מסומן ברשימה האמצעית — שם רושמים <em>מה להביא</em> ושוב «הוספה».
-              כל פריט נוסף: אותו דבר (אפשר לבחור מקום אחר ברשימה האמצעית).
-              ליד כל כותרת מקום יש כפתור כיווץ (▾/▸). בלילה, רק מה שלא סומן V עובר ליום הבא — יחד עם כותרת המקום אם נשארו תחתיה משימות פתוחות.
-            </p>
-          </div>
-        </details>
         <div id="dailyTodayList" class="list daily-list" role="list"></div>
         <div id="dailyTodayProgress" class="daily-progress"></div>
         </div>
@@ -517,12 +464,6 @@
       <div class="daily-inner">
         <div class="panel-header daily-header">
           <div class="panel-title">משימות היום</div>
-          <details class="help-collapsible panel-hint">
-            <summary class="help-collapsible-summary">הסבר</summary>
-            <div class="help-collapsible-body">
-              <div class="dialog-text dialog-text--tight">כל מה שמתוזמן להיום (מהרעיונות) + משימות “היום שלי”.</div>
-            </div>
-          </details>
         </div>
         <div class="today-tasks-root">
           <div class="today-tasks-section">
@@ -664,14 +605,6 @@
       <div class="daily-inner">
         <div class="panel-header daily-header">
           <div class="panel-title">תכנון צהריים</div>
-          <details class="help-collapsible panel-hint">
-            <summary class="help-collapsible-summary">הסבר</summary>
-            <div class="help-collapsible-body">
-              <div class="dialog-text dialog-text--tight">
-                לכל יום: בוחרים/כותבים רכיב → «הוספה» (חוזר על עצמו) → «שמירת ארוחה ליום» שומרת את כל הרכיבים כארוחה אחת (וגם ב«מנות שלי»). מנות שכבר בתכנון באותו יום נשארות — לא מתמזגות.
-              </div>
-            </div>
-          </details>
         </div>
 
         <div class="lunch-tabs" role="tablist" aria-label="תכנון צהריים">
@@ -680,7 +613,6 @@
           <button type="button" class="tab lunch-tab" data-lunch-tab="dishes" role="tab" aria-selected="false">מנות שלי</button>
           <button type="button" class="tab lunch-tab" data-lunch-tab="recipes" role="tab" aria-selected="false">מתכונים</button>
         </div>
-        <p class="lunch-tabs-hint" aria-hidden="true">← גלילה לכל הלשוניות →</p>
 
         <div id="lunchPanelWeek" class="lunch-panel" role="tabpanel">
           <div class="lunch-week-nav">
@@ -714,12 +646,6 @@
       <div class="daily-inner">
         <div class="panel-header daily-header">
           <div class="panel-title">תזמון</div>
-          <details class="help-collapsible panel-hint">
-            <summary class="help-collapsible-summary">הסבר</summary>
-            <div class="help-collapsible-body">
-              <div class="dialog-text dialog-text--tight">מדידות ממשימות «היום שלי» — כמה זמן כל משימה לקחה בפועל (שימושי לתכנון בהמשך).</div>
-            </div>
-          </details>
         </div>
         <div id="dailyTimingList" class="timing-list" role="list"></div>
       </div>
@@ -729,12 +655,6 @@
       <div class="daily-inner">
         <div class="panel-header daily-header">
           <div class="panel-title">מלאי בית</div>
-          <details class="help-collapsible panel-hint">
-            <summary class="help-collapsible-summary">הסבר</summary>
-            <div class="help-collapsible-body">
-              <div class="dialog-text dialog-text--tight">רשימת מזון שיש בבית — «השתמשתי» מורידה יחידה מהמלאי. «ייבוא מקבלה / צילום»: PDF תעודת משלוח או תמונת מסך מהאתר (OCR). תמיד בדקי את הטבלה לפני שמירה.</div>
-            </div>
-          </details>
         </div>
         <div class="pantry-toolbar">
           <div id="pantryFilterBar" class="pantry-filters" role="tablist" aria-label="סינון לפי מיקום"></div>

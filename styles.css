@@ -2325,10 +2325,56 @@ body{
   gap: 8px;
   align-items: center;
 }
-.lunch-day-add-row .lunch-day-select{
-  flex: 1 1 100%;
-  min-width: 0;
+.lunch-day-picker{
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: #fff;
+  padding: 8px 10px;
 }
+.lunch-day-picker-title{
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.lunch-day-pick-scroll{
+  max-height: min(220px, 40vh);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.lunch-day-pick-group{ margin-bottom: 8px; }
+.lunch-day-pick-group:last-child{ margin-bottom: 0; }
+.lunch-day-pick-group-title{
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--heading);
+  margin: 4px 0 6px;
+}
+.lunch-day-pick{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.lunch-day-pick-label{
+  flex: 1;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  color: var(--heading);
+}
+.lunch-day-pick-cb{
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--accent-pink, #c41e3a);
+  cursor: pointer;
+}
+.lunch-day-picker-empty{ margin: 0; font-size: 0.88rem; }
+.lunch-day-add-row .input{ flex: 1 1 140px; min-width: 0; }
+.lunch-day-draft-add-btn{ flex-shrink: 0; }
 .lunch-day-meal-card{
   flex-direction: column;
   align-items: stretch;
@@ -2374,9 +2420,12 @@ body{
   gap: 6px;
   justify-content: flex-end;
 }
-.lunch-day-add-row .input{ flex: 1 1 120px; min-width: 0; }
 .lunch-day-commit-btn{ width: 100%; }
-.lunch-day-commit-btn:disabled{ opacity: 0.45; cursor: not-allowed; }
+.lunch-day-commit-btn:not(.is-ready){ opacity: 0.72; }
+.lunch-day-commit-btn.is-ready{
+  opacity: 1;
+  box-shadow: 0 0 0 2px rgba(196, 30, 58, 0.25);
+}
 
 .lunch-stock-grid{
   display: grid;
