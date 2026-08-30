@@ -1254,14 +1254,82 @@ function setHourlyBrowseDateKey(dateKey) {
   render();
 }
 
+const HOURLY_MINUTE_STEPS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function fillHourlyMinuteSelect(sel, extraMin) {
+  if (!(sel instanceof HTMLSelectElement)) return;
+  const extra = Number.isFinite(extraMin) ? extraMin : null;
+  const mins = [...HOURLY_MINUTE_STEPS];
+  if (extra != null && extra >= 0 && extra <= 59 && !mins.includes(extra)) {
+    mins.push(extra);
+    mins.sort((a, b) => a - b);
+  }
+  const prev = sel.value;
+  sel.innerHTML = mins.map((m) => `<option value="${m}">${pad2(m)}</option>`).join("");
+  if (extra != null) sel.value = String(extra);
+  else if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+}
+
+function fillHourlyHourSelect(sel) {
+  if (!(sel instanceof HTMLSelectElement) || sel.options.length === 24) return;
+  sel.innerHTML = Array.from({ length: 24 }, (_, h) => `<option value="${h}">${pad2(h)}</option>`).join("");
+}
+
+function initHourlyTimeSelects() {
+  for (const id of [
+    "hourlyScheduleStartH",
+    "hourlyScheduleEndH",
+    "hourlyScheduleEditStartH",
+    "hourlyScheduleEditEndH",
+  ]) {
+    fillHourlyHourSelect(document.getElementById(id));
+  }
+  for (const id of [
+    "hourlyScheduleStartM",
+    "hourlyScheduleEndM",
+    "hourlyScheduleEditStartM",
+    "hourlyScheduleEditEndM",
+  ]) {
+    fillHourlyMinuteSelect(document.getElementById(id));
+  }
+  if (!document.getElementById("hourlyScheduleStartH")?.value) {
+    setHourlyHmPair("hourlyScheduleStart", 9 * 60);
+    setHourlyHmPair("hourlyScheduleEnd", 10 * 60);
+  }
+}
+
+function setHourlyHmPair(prefix, totalMin) {
+  const t = Number(totalMin);
+  if (!Number.isFinite(t)) return;
+  const h = Math.max(0, Math.min(23, Math.floor(t / 60)));
+  const m = Math.max(0, Math.min(59, t % 60));
+  const hEl = document.getElementById(`${prefix}H`);
+  const mEl = document.getElementById(`${prefix}M`);
+  fillHourlyHourSelect(hEl);
+  fillHourlyMinuteSelect(mEl, m);
+  if (hEl instanceof HTMLSelectElement) hEl.value = String(h);
+  if (mEl instanceof HTMLSelectElement) mEl.value = String(m);
+}
+
+function getHourlyHmPair(prefix) {
+  const h = Number(document.getElementById(`${prefix}H`)?.value);
+  const m = Number(document.getElementById(`${prefix}M`)?.value);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
 function openHourlyScheduleEditDialog(dateKey, blockId) {
   const blk = hourlySchedule.days[dateKey]?.blocks?.find((x) => x.id === blockId);
   if (!blk) return;
   const dlg = document.getElementById("hourlyScheduleEditDialog");
   if (!(dlg instanceof HTMLDialogElement)) return;
   document.getElementById("hourlyScheduleEditTitle").value = blk.title;
-  document.getElementById("hourlyScheduleEditStart").value = minutesToTimeString(blk.startMin);
-  document.getElementById("hourlyScheduleEditEnd").value = minutesToTimeString(blk.endMin);
+  setHourlyHmPair("hourlyScheduleEditStart", blk.startMin);
+  setHourlyHmPair("hourlyScheduleEditEnd", blk.endMin);
   document.getElementById("hourlyScheduleEditDone").checked = !!blk.done;
   dlg.dataset.editDateKey = dateKey;
   dlg.dataset.editBlockId = blockId;
@@ -4277,6 +4345,7 @@ function wireGlobalHandlers() {
     }
   });
 
+  initHourlyTimeSelects();
   document.getElementById("hourlyScheduleDayPrev")?.addEventListener("click", () => shiftHourlyBrowse(-1));
   document.getElementById("hourlyScheduleDayNext")?.addEventListener("click", () => shiftHourlyBrowse(1));
   document.getElementById("hourlyScheduleJumpToday")?.addEventListener("click", () => {
@@ -4291,14 +4360,12 @@ function wireGlobalHandlers() {
   document.getElementById("hourlyScheduleAddForm")?.addEventListener("submit", (e) => {
     e.preventDefault();
     const title = document.getElementById("hourlyScheduleTitle")?.value?.trim();
-    const startStr = document.getElementById("hourlyScheduleStart")?.value;
-    const endStr = document.getElementById("hourlyScheduleEnd")?.value;
-    const startMin = timeStringToMinutes(startStr);
+    const startMin = getHourlyHmPair("hourlyScheduleStart");
     if (!title || startMin == null) {
       toast("נא למלא משימה ושעת התחלה.");
       return;
     }
-    let endMin = endStr ? timeStringToMinutes(endStr) : null;
+    let endMin = getHourlyHmPair("hourlyScheduleEnd");
     if (endMin == null) endMin = Math.min(startMin + 60, 24 * 60 - 1);
     if (endMin <= startMin) endMin = Math.min(startMin + 60, 24 * 60 - 1);
     addScheduleBlock(hourlySchedule, hourlyBrowseDateKey, uid("hs"), title, startMin, endMin);
@@ -4313,12 +4380,10 @@ function wireGlobalHandlers() {
     if (pick) {
       const h = Number(pick.dataset.hour);
       if (!Number.isFinite(h)) return;
-      const startInp = document.getElementById("hourlyScheduleStart");
-      const endInp = document.getElementById("hourlyScheduleEnd");
       const startMin = h * 60;
       const endMin = Math.min(startMin + 60, 24 * 60 - 1);
-      if (startInp instanceof HTMLInputElement) startInp.value = minutesToTimeString(startMin);
-      if (endInp instanceof HTMLInputElement) endInp.value = minutesToTimeString(endMin);
+      setHourlyHmPair("hourlyScheduleStart", startMin);
+      setHourlyHmPair("hourlyScheduleEnd", endMin);
       document.getElementById("hourlyScheduleTitle")?.focus();
       return;
     }
@@ -4334,8 +4399,8 @@ function wireGlobalHandlers() {
     const dateKey = dlg.dataset.editDateKey;
     const blockId = dlg.dataset.editBlockId;
     const title = document.getElementById("hourlyScheduleEditTitle")?.value?.trim();
-    const startMin = timeStringToMinutes(document.getElementById("hourlyScheduleEditStart")?.value);
-    const endMin = timeStringToMinutes(document.getElementById("hourlyScheduleEditEnd")?.value);
+    const startMin = getHourlyHmPair("hourlyScheduleEditStart");
+    const endMin = getHourlyHmPair("hourlyScheduleEditEnd");
     const done = !!document.getElementById("hourlyScheduleEditDone")?.checked;
     if (!dateKey || !blockId || !title || startMin == null || endMin == null) {
       toast("נא למלא את כל השדות.");

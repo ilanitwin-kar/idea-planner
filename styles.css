@@ -2084,23 +2084,50 @@ body.app-mode-home .top-menu-dialog{
 .hourly-add-form{
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  align-items: flex-end;
-  margin: 16px 0 20px;
-  padding: 14px;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0 16px;
+  padding: 10px 12px;
   border-radius: 14px;
   border: 1px solid var(--border-soft);
   background: #fff;
 }
-.hourly-add-form .input{ flex: 1 1 160px; min-width: 0; }
-.hourly-time-line{
+.hourly-add-form .input{ flex: 1 1 140px; min-width: 0; padding: 8px 10px; font-size: 0.95rem; }
+.hourly-times-row{
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 0.85rem;
-  color: var(--muted);
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
-.hourly-time-input{ width: 7.5rem; }
+.hourly-times-row--edit{ margin: 8px 0 4px; }
+.hourly-time-chip{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.hourly-hm{
+  width: auto;
+  min-width: 2.75rem;
+  padding: 4px 2px 4px 4px;
+  min-height: 32px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.hourly-hm-colon{
+  font-weight: 800;
+  color: var(--heading);
+  line-height: 1;
+}
 .hourly-timeline{
   overflow-x: auto;
   margin-bottom: 12px;

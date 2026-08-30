@@ -533,14 +533,20 @@
 
           <form id="hourlyScheduleAddForm" class="hourly-add-form" autocomplete="off">
             <input id="hourlyScheduleTitle" class="input" type="text" maxlength="200" placeholder="מה עושים?" required />
-            <label class="hourly-time-line">
-              <span>מ־</span>
-              <input id="hourlyScheduleStart" class="input hourly-time-input" type="time" required />
-            </label>
-            <label class="hourly-time-line">
-              <span>עד</span>
-              <input id="hourlyScheduleEnd" class="input hourly-time-input" type="time" />
-            </label>
+            <div class="hourly-times-row" role="group" aria-label="שעת התחלה וסיום">
+              <div class="hourly-time-chip">
+                <span>מ־</span>
+                <select id="hourlyScheduleStartH" class="select hourly-hm" aria-label="שעת התחלה"></select>
+                <span class="hourly-hm-colon" aria-hidden="true">:</span>
+                <select id="hourlyScheduleStartM" class="select hourly-hm" aria-label="דקות התחלה"></select>
+              </div>
+              <div class="hourly-time-chip">
+                <span>עד</span>
+                <select id="hourlyScheduleEndH" class="select hourly-hm" aria-label="שעת סיום"></select>
+                <span class="hourly-hm-colon" aria-hidden="true">:</span>
+                <select id="hourlyScheduleEndM" class="select hourly-hm" aria-label="דקות סיום"></select>
+              </div>
+            </div>
             <button class="btn" type="submit">הוספה ללו״ז</button>
           </form>
 
@@ -554,13 +560,19 @@
       <form method="dialog" class="dialog-inner" id="hourlyScheduleEditForm">
         <div class="dialog-title">עריכת משימה בלו״ז</div>
         <input id="hourlyScheduleEditTitle" class="input" type="text" maxlength="200" autocomplete="off" />
-        <div class="dialog-grid">
-          <label class="checkline">התחלה
-            <input id="hourlyScheduleEditStart" class="input" type="time" />
-          </label>
-          <label class="checkline">סיום
-            <input id="hourlyScheduleEditEnd" class="input" type="time" />
-          </label>
+        <div class="hourly-times-row hourly-times-row--edit" role="group" aria-label="שעת התחלה וסיום">
+          <div class="hourly-time-chip">
+            <span>מ־</span>
+            <select id="hourlyScheduleEditStartH" class="select hourly-hm" aria-label="שעת התחלה"></select>
+            <span class="hourly-hm-colon" aria-hidden="true">:</span>
+            <select id="hourlyScheduleEditStartM" class="select hourly-hm" aria-label="דקות התחלה"></select>
+          </div>
+          <div class="hourly-time-chip">
+            <span>עד</span>
+            <select id="hourlyScheduleEditEndH" class="select hourly-hm" aria-label="שעת סיום"></select>
+            <span class="hourly-hm-colon" aria-hidden="true">:</span>
+            <select id="hourlyScheduleEditEndM" class="select hourly-hm" aria-label="דקות סיום"></select>
+          </div>
         </div>
         <div class="dialog-actions">
           <label class="checkline">
