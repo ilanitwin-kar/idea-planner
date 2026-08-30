@@ -419,10 +419,12 @@ const tryCloudAutoBackup = debounce(CLOUD_DEBOUNCE_MS, async () => {
     setCloudBackupHint("working", "מגבה אוטומטית…");
     await uploadCloudSnapshot(user.uid);
     const nowIso = new Date().toISOString();
-    setCloudBackupHint("ok", `גיבוי אוטומטי הועלה ב־${cloudTimeShort(nowIso)}`, nowIso);
+    const timeStr = cloudTimeShort(nowIso);
+    setCloudBackupHint("ok", `✓ גיבוי אוטומטי הועלה ב־${timeStr}`, nowIso);
+    toast(`✓ גיבוי ענן אוטומטי הועלה (${timeStr})`, { durationMs: 3500 });
   } catch (e) {
     console.error(e);
-    setCloudBackupHint("error", "גיבוי אוטומטי נכשל (בדקי חיבור / הרשאות).");
+    setCloudBackupHint("error", "⚠ גיבוי אוטומטי נכשל (בדקי חיבור / הרשאות).");
   }
 });
 
@@ -2651,13 +2653,13 @@ function applyMobileLayout() {
 
 let dragSubtaskId = null;
 
-function toast(msg) {
+function toast(msg, { durationMs = 3500 } = {}) {
   const el = document.getElementById("toast");
   if (!el) return;
   el.textContent = msg;
   el.classList.remove("hidden");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.add("hidden"), 2600);
+  toast._t = setTimeout(() => el.classList.add("hidden"), durationMs);
 }
 
 function findSubtaskById(subtaskId) {
@@ -3791,15 +3793,19 @@ function wireGlobalHandlers() {
         return;
       }
       setCloudBackupHint("working", "מגבה…");
+      if (cloudBackupNowBtn) cloudBackupNowBtn.disabled = true;
       try {
         await uploadCloudSnapshot(user.uid);
         const nowIso = new Date().toISOString();
-        setCloudBackupHint("ok", `גיבוי הועלה ב־${cloudTimeShort(nowIso)}`, nowIso);
-        toast("הגיבוי הועלה לענן.");
+        const timeStr = cloudTimeShort(nowIso);
+        setCloudBackupHint("ok", `✓ גיבוי הועלה ב־${timeStr}`, nowIso);
+        toast(`✓ הגיבוי הועלה לענן בהצלחה (${timeStr})`, { durationMs: 5000 });
       } catch (e) {
         console.error(e);
-        setCloudBackupHint("error", "העלאת גיבוי נכשלה (בדקי חיבור וכללי אבטחה ב-Firestore).");
-        toast("העלאת גיבוי נכשלה (בדקי חיבור וכללי אבטחה ב-Firestore).");
+        setCloudBackupHint("error", "⚠ העלאת גיבוי נכשלה — בדקי חיבור והרשאות Firestore.");
+        toast("⚠ העלאת גיבוי נכשלה.", { durationMs: 5000 });
+      } finally {
+        if (cloudBackupNowBtn) cloudBackupNowBtn.disabled = false;
       }
     });
 
