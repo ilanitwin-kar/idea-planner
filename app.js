@@ -1018,24 +1018,33 @@ function createDailyTaskRow(dateKey, it, { indent }) {
   return row;
 }
 
-function renderDayItemsList(container, dateKey) {
+function renderDayItemsList(container, dateKey, { hideDone = false } = {}) {
   if (!container) return;
   container.innerHTML = "";
   const day = dayJournal.days[dateKey];
   const items = day?.items ?? [];
-  if (items.length === 0) {
+
+  // כאשר מסתירים done, בודקים שיש לפחות משהו להציג
+  const visibleItems = hideDone ? items.filter((x) => !x.done) : items;
+  if (visibleItems.length === 0) {
     const div = document.createElement("div");
     div.className = "empty";
     div.innerHTML = UI_EMPTY;
     container.appendChild(div);
     return;
   }
-  const { roots, childMap } = dayItemsRenderModel(items);
+
+  const { roots, childMap } = dayItemsRenderModel(hideDone ? visibleItems : items);
   for (const it of roots) {
+    if (hideDone && it.done) continue;
     if (it.kind === "place") {
+      // בדיקה: האם יש ילדים שאינם done תחת מקום זה
+      const children = childMap.get(it.id) ?? [];
+      const visibleChildren = hideDone ? children.filter((ch) => !ch.done) : children;
+      if (hideDone && visibleChildren.length === 0) continue;
       container.appendChild(createDailyPlaceRow(dateKey, it));
       const hideChildren = !!it.collapsed;
-      for (const ch of childMap.get(it.id) ?? []) {
+      for (const ch of visibleChildren) {
         const childRow = createDailyTaskRow(dateKey, ch, { indent: true });
         if (hideChildren) childRow.classList.add("hidden");
         container.appendChild(childRow);
@@ -1123,7 +1132,7 @@ function renderDailyTodayPage() {
     swipeArea.style.setProperty("--daily-accent", accent);
   }
 
-  renderDayItemsList(document.getElementById("dailyTodayList"), viewKey);
+  renderDayItemsList(document.getElementById("dailyTodayList"), viewKey, { hideDone: true });
   const pr = dayProgress(dayJournal, viewKey);
   if (progEl) {
     if (!pr.total) {
@@ -1989,7 +1998,7 @@ function renderTodayTasksPage() {
   }
 
   // Daily journal tasks for today
-  renderDayItemsList(document.getElementById("todayTasksDailyRoot"), todayK);
+  renderDayItemsList(document.getElementById("todayTasksDailyRoot"), todayK, { hideDone: true });
 
   if (progEl) {
     const ideaCount = collectSubtasksForToday().tasks.reduce((acc, t) => acc + (t.subs?.length ?? 0), 0);
