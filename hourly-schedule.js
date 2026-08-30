@@ -1,6 +1,7 @@
-/** לו״ז יומי לפי שעות — נשמר מקומית לפי מפתח תאריך */
+/** לו״ז יומי — רשימת משימות ליום, עם שעת התחלה אופציונלית ותתי־משימות */
 
 export const HOURLY_SCHEDULE_STORAGE_KEY = "idea-planner:hourly-schedule:v1";
+export const HOURLY_DIGEST_MIN = 10 * 60;
 
 export function loadHourlySchedule() {
   try {
@@ -10,7 +11,12 @@ export function loadHourlySchedule() {
     if (!parsed || typeof parsed !== "object") return { days: {} };
     const days = parsed.days;
     if (!days || typeof days !== "object") return { days: {} };
-    return { days: { ...days } };
+    const out = { days: {} };
+    for (const [k, day] of Object.entries(days)) {
+      const blocks = Array.isArray(day?.blocks) ? day.blocks.map(normalizeBlock).filter(Boolean) : [];
+      if (blocks.length) out.days[k] = { blocks };
+    }
+    return out;
   } catch {
     return { days: {} };
   }
@@ -18,6 +24,23 @@ export function loadHourlySchedule() {
 
 export function saveHourlySchedule(state) {
   localStorage.setItem(HOURLY_SCHEDULE_STORAGE_KEY, JSON.stringify(state));
+}
+
+function normalizeSub(s) {
+  if (!s || typeof s !== "object" || !s.id) return null;
+  const title = String(s.title ?? s.text ?? "").trim();
+  if (!title) return null;
+  return { id: String(s.id), title, done: !!s.done };
+}
+
+function normalizeBlock(b) {
+  if (!b || typeof b !== "object" || !b.id) return null;
+  const title = String(b.title ?? b.text ?? "").trim();
+  if (!title) return null;
+  const startRaw = b.startMin;
+  const startMin = startRaw == null || startRaw === "" ? null : clampMinutes(startRaw);
+  const subs = Array.isArray(b.subs) ? b.subs.map(normalizeSub).filter(Boolean) : [];
+  return { id: String(b.id), title, startMin, done: !!b.done, subs };
 }
 
 function ensureDay(state, dateKey) {
@@ -33,7 +56,10 @@ function clampMinutes(m) {
   return Math.max(0, Math.min(24 * 60 - 1, Math.round(x)));
 }
 
-/** "HH:MM" → דקות מחצות */
+export function blockHasTime(blk) {
+  return blk != null && Number.isFinite(blk.startMin);
+}
+
 export function timeStringToMinutes(hhmm) {
   const s = String(hhmm ?? "").trim();
   const m = /^(\d{1,2}):(\d{2})$/.exec(s);
@@ -55,15 +81,28 @@ export function formatMinutesHebrew(totalMin) {
   return minutesToTimeString(totalMin);
 }
 
-export function addScheduleBlock(state, dateKey, id, title, startMin, endMin) {
+function sortBlocks(blocks) {
+  return [...blocks].sort((a, b) => {
+    const at = blockHasTime(a);
+    const bt = blockHasTime(b);
+    if (at && bt) return a.startMin - b.startMin;
+    if (at && !bt) return -1;
+    if (!at && bt) return 1;
+    return 0;
+  });
+}
+
+function resortDay(day) {
+  day.blocks = sortBlocks(day.blocks);
+}
+
+export function addScheduleBlock(state, dateKey, id, title, startMin = null) {
   const day = ensureDay(state, dateKey);
-  const start = clampMinutes(startMin);
-  let end = clampMinutes(endMin);
-  if (end <= start) end = Math.min(start + 60, 24 * 60 - 1);
   const t = String(title ?? "").trim();
   if (!t) return false;
-  day.blocks.push({ id, title: t, startMin: start, endMin: end, done: false });
-  day.blocks.sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+  const start = startMin == null || startMin === "" ? null : clampMinutes(startMin);
+  day.blocks.push({ id, title: t, startMin: start, done: false, subs: [] });
+  resortDay(day);
   return true;
 }
 
@@ -77,11 +116,12 @@ export function updateScheduleBlock(state, dateKey, blockId, patch) {
     if (!t) return false;
     blk.title = t;
   }
-  if ("startMin" in patch) blk.startMin = clampMinutes(patch.startMin);
-  if ("endMin" in patch) blk.endMin = clampMinutes(patch.endMin);
-  if (blk.endMin <= blk.startMin) blk.endMin = Math.min(blk.startMin + 60, 24 * 60 - 1);
+  if ("startMin" in patch) {
+    blk.startMin = patch.startMin == null || patch.startMin === "" ? null : clampMinutes(patch.startMin);
+  }
   if ("done" in patch) blk.done = !!patch.done;
-  day.blocks.sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+  if (!Array.isArray(blk.subs)) blk.subs = [];
+  resortDay(day);
   return true;
 }
 
@@ -99,10 +139,30 @@ export function toggleScheduleBlockDone(state, dateKey, blockId) {
   blk.done = !blk.done;
 }
 
+export function addScheduleSub(state, dateKey, blockId, subId, title) {
+  const blk = state.days[dateKey]?.blocks?.find((x) => x.id === blockId);
+  if (!blk) return false;
+  const t = String(title ?? "").trim();
+  if (!t) return false;
+  if (!Array.isArray(blk.subs)) blk.subs = [];
+  blk.subs.push({ id: subId, title: t, done: false });
+  return true;
+}
+
+export function toggleScheduleSubDone(state, dateKey, blockId, subId) {
+  const sub = state.days[dateKey]?.blocks?.find((x) => x.id === blockId)?.subs?.find((s) => s.id === subId);
+  if (!sub) return;
+  sub.done = !sub.done;
+}
+
+export function deleteScheduleSub(state, dateKey, blockId, subId) {
+  const blk = state.days[dateKey]?.blocks?.find((x) => x.id === blockId);
+  if (!blk?.subs) return;
+  blk.subs = blk.subs.filter((s) => s.id !== subId);
+}
+
 export function blocksForDay(state, dateKey) {
-  return [...(state.days[dateKey]?.blocks ?? [])].sort(
-    (a, b) => a.startMin - b.startMin || a.endMin - b.endMin,
-  );
+  return sortBlocks(state.days[dateKey]?.blocks ?? []);
 }
 
 export function scheduleDayProgress(state, dateKey) {
@@ -111,7 +171,6 @@ export function scheduleDayProgress(state, dateKey) {
   return { total: blocks.length, done };
 }
 
-/** כל הבלוקים בכל הימים — לתזכורות */
 export function collectAllScheduleBlocks(state) {
   const out = [];
   for (const [dateKey, day] of Object.entries(state?.days ?? {})) {
@@ -123,8 +182,8 @@ export function collectAllScheduleBlocks(state) {
   return out;
 }
 
-/** חצות מקומית + דקות → epoch ms */
 export function hourlyBlockFireAtMs(dateKey, startMin) {
+  if (!Number.isFinite(startMin)) return null;
   const [y, m, d] = String(dateKey).split("-").map(Number);
   if (!y || !m || !d) return null;
   const dt = new Date(y, m - 1, d, 0, 0, 0, 0);

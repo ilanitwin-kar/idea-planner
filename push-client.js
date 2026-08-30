@@ -5,6 +5,8 @@ import {
   collectAllScheduleBlocks,
   hourlyBlockFireAtMs,
   minutesToTimeString,
+  blockHasTime,
+  HOURLY_DIGEST_MIN,
 } from "./hourly-schedule.js";
 
 const USER_KEY_LS = "idea-planner:push-user-key:v1";
@@ -42,20 +44,45 @@ function urlBase64ToUint8Array(base64String) {
   return out;
 }
 
+function digestBodyForDay(titles) {
+  const list = titles.filter(Boolean);
+  if (!list.length) return "";
+  const joined = list.join(" · ");
+  if (joined.length <= 220) return joined;
+  return `${joined.slice(0, 210)}…`;
+}
+
 export function remindersFromHourlySchedule(schedule) {
   const now = Date.now();
   const out = [];
+  const digestTitles = new Map();
   for (const { dateKey, block: blk } of collectAllScheduleBlocks(schedule)) {
     if (blk.done) continue;
-    const fireAt = hourlyBlockFireAtMs(dateKey, blk.startMin);
-    if (fireAt == null || fireAt < now - 45_000) continue;
-    const startLabel = minutesToTimeString(blk.startMin);
-    const endLabel = minutesToTimeString(blk.endMin);
     const title = String(blk.title ?? "").trim() || "משימה";
+    if (blockHasTime(blk)) {
+      const fireAt = hourlyBlockFireAtMs(dateKey, blk.startMin);
+      if (fireAt == null || fireAt < now - 45_000) continue;
+      const startLabel = minutesToTimeString(blk.startMin);
+      out.push({
+        id: `hourly:${dateKey}:${blk.id}`,
+        title: "תזכורת מלו״ז",
+        body: `${title} · ${startLabel}`,
+        url: "/",
+        fireAt,
+      });
+      continue;
+    }
+    if (!digestTitles.has(dateKey)) digestTitles.set(dateKey, []);
+    digestTitles.get(dateKey).push(title);
+  }
+  for (const [dateKey, titles] of digestTitles) {
+    const body = digestBodyForDay(titles);
+    const fireAt = hourlyBlockFireAtMs(dateKey, HOURLY_DIGEST_MIN);
+    if (!body || fireAt == null || fireAt < now - 45_000) continue;
     out.push({
-      id: `hourly:${dateKey}:${blk.id}`,
-      title: "תזכורת מלו״ז",
-      body: `${title} · ${startLabel}–${endLabel}`,
+      id: `hourly:digest:${dateKey}`,
+      title: "הלו״ז להיום",
+      body,
       url: "/",
       fireAt,
     });
@@ -157,39 +184,61 @@ function pruneFiredMap(map) {
   return next;
 }
 
-/** התראה מקומית בשעת ההתחלה — עובדת כשהאפליקציה פתוחה / ברקע קצר */
+function showLocalHourlyNotification(tag, title, body) {
+  try {
+    const n = new Notification(title, {
+      body,
+      tag,
+      icon: "/icons/icon-192.png",
+    });
+    n.onclick = () => {
+      try {
+        window.focus();
+      } catch {
+        /* ignore */
+      }
+    };
+  } catch {
+    /* ignore */
+  }
+}
+
+/** התראה מקומית — בשעת משימה, וב־10:00 סיכום של מה שבלי שעה */
 export function tickLocalHourlyReminders(schedule) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   const now = Date.now();
   let fired = pruneFiredMap(loadFiredMap());
   let changed = false;
+  const digestTitles = new Map();
   for (const { dateKey, block: blk } of collectAllScheduleBlocks(schedule)) {
     if (blk.done) continue;
-    const fireAt = hourlyBlockFireAtMs(dateKey, blk.startMin);
+    const title = String(blk.title ?? "").trim() || "משימה";
+    if (blockHasTime(blk)) {
+      const fireAt = hourlyBlockFireAtMs(dateKey, blk.startMin);
+      if (fireAt == null) continue;
+      if (now < fireAt || now > fireAt + 90_000) continue;
+      const key = `hourly:${dateKey}:${blk.id}:${blk.startMin}`;
+      if (fired[key]) continue;
+      fired[key] = now;
+      changed = true;
+      const startLabel = minutesToTimeString(blk.startMin);
+      showLocalHourlyNotification(key, "תזכורת מלו״ז", `עכשיו: ${title} (${startLabel})`);
+      continue;
+    }
+    if (!digestTitles.has(dateKey)) digestTitles.set(dateKey, []);
+    digestTitles.get(dateKey).push(title);
+  }
+  for (const [dateKey, titles] of digestTitles) {
+    const fireAt = hourlyBlockFireAtMs(dateKey, HOURLY_DIGEST_MIN);
     if (fireAt == null) continue;
     if (now < fireAt || now > fireAt + 90_000) continue;
-    const key = `hourly:${dateKey}:${blk.id}:${blk.startMin}`;
+    const key = `hourly:digest:${dateKey}`;
     if (fired[key]) continue;
+    const body = digestBodyForDay(titles);
+    if (!body) continue;
     fired[key] = now;
     changed = true;
-    const startLabel = minutesToTimeString(blk.startMin);
-    const title = String(blk.title ?? "").trim() || "משימה";
-    try {
-      const n = new Notification("תזכורת מלו״ז", {
-        body: `עכשיו: ${title} (${startLabel})`,
-        tag: key,
-        icon: "/icons/icon-192.png",
-      });
-      n.onclick = () => {
-        try {
-          window.focus();
-        } catch {
-          /* ignore */
-        }
-      };
-    } catch {
-      /* ignore */
-    }
+    showLocalHourlyNotification(key, "הלו״ז להיום", body);
   }
   if (changed) saveFiredMap(fired);
 }

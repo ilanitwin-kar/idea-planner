@@ -122,7 +122,7 @@
         </div>
         <div class="section">
           <div class="section-title">תזכורות לו״ז</div>
-          <p class="dialog-hint">בשעת ההתחלה של משימה בלו״ז היומי תקבל התראה בטלפון — למשל «הפעילי מכונת כביסה».</p>
+          <p class="dialog-hint">משימה עם שעה — התראה באותו רגע. בלי שעה — ב־10:00 בבוקר כל הרשימה של אותו יום.</p>
           <p id="pushNotifyStatus" class="dialog-text dialog-text--tight">—</p>
           <label class="checkline">כתובת שרת תזכורות (אופציונלי)
             <input id="setPushServerUrl" class="input" type="url" placeholder="ריק = אותו אתר" autocomplete="off" />
@@ -446,19 +446,18 @@
     <section id="viewDailyToday" class="daily-page hidden" aria-label="היום">
       <div class="daily-inner">
         <div class="daily-inner-surface" id="dailyTodaySwipeArea">
-          <div class="daily-hero">
-            <div class="daily-kicker">רשימת היום</div>
-            <div id="dailyTodayTitle" class="daily-date-title"></div>
-            <div id="dailyTodaySub" class="daily-date-sub"></div>
-            <div class="daily-day-nav" role="toolbar" aria-label="מעבר בין ימים">
-              <button type="button" id="dailyDayPrev" class="btn btn-ghost daily-day-nav-btn">יום לפני</button>
-              <button type="button" id="dailyJumpToday" class="btn btn-ghost daily-day-nav-btn hidden">חזרה להיום</button>
-              <button type="button" id="dailyDayNext" class="btn btn-ghost daily-day-nav-btn">יום אחרי</button>
+          <div class="daily-hero daily-hero--compact">
+            <div class="daily-day-nav daily-day-nav--inline" role="toolbar" aria-label="מעבר בין ימים">
+              <button type="button" id="dailyDayPrev" class="btn btn-ghost daily-day-nav-arrow" aria-label="יום לפני">‹</button>
+              <div id="dailyTodayTitle" class="daily-date-title daily-date-title--compact"></div>
+              <button type="button" id="dailyDayNext" class="btn btn-ghost daily-day-nav-arrow" aria-label="יום אחרי">›</button>
             </div>
+            <button type="button" id="dailyJumpToday" class="btn btn-ghost daily-jump-today hidden">חזרה להיום</button>
+            <div id="dailyTodayNextHourly" class="daily-next-hourly hidden"></div>
           </div>
-        <form id="dailyTodayForm" class="add-row daily-add daily-today-form" autocomplete="off">
-          <select id="dailyTodayKind" class="select daily-today-kind" aria-label="סוג שורה">
-            <option value="task">משימה / לקנות</option>
+        <form id="dailyTodayForm" class="add-row daily-add daily-today-form daily-today-form--compact" autocomplete="off">
+          <select id="dailyTodayKind" class="select daily-today-kind hidden" aria-label="סוג שורה">
+            <option value="task" selected>משימה / לקנות</option>
             <option value="place">כותרת מקום (חנות, בית מרקחת…)</option>
           </select>
           <select id="dailyTodayUnderPlace" class="select daily-today-under hidden" aria-label="מה להביא מאיזה מקום">
@@ -466,6 +465,7 @@
           </select>
           <input id="dailyTodayInput" class="input" type="text" maxlength="200" placeholder="משימה או מה לקנות…" />
           <button class="btn" type="submit">הוספה</button>
+          <button type="button" id="dailyTodayAddPlaceBtn" class="btn btn-ghost daily-today-place-toggle">+ כותרת מקום</button>
         </form>
         <div id="dailyTodayList" class="list daily-list" role="list"></div>
         <div id="dailyTodayProgress" class="daily-progress"></div>
@@ -514,43 +514,38 @@
       </div>
     </section>
 
-    <section id="viewHourlySchedule" class="daily-page hidden" aria-label="לו״ז יומי לפי שעות">
+    <section id="viewHourlySchedule" class="daily-page hidden" aria-label="לו״ז יומי">
       <div class="daily-inner">
         <div class="daily-inner-surface">
-          <div class="daily-hero">
-            <div class="daily-kicker">לו״ז</div>
-            <div id="hourlyScheduleDateTitle" class="daily-date-title"></div>
-            <div class="daily-day-nav" role="toolbar" aria-label="מעבר בין ימים">
-              <button type="button" id="hourlyScheduleDayPrev" class="btn btn-ghost daily-day-nav-btn">יום לפני</button>
-              <button type="button" id="hourlyScheduleJumpToday" class="btn btn-ghost daily-day-nav-btn hidden">חזרה להיום</button>
-              <button type="button" id="hourlyScheduleDayNext" class="btn btn-ghost daily-day-nav-btn">יום אחרי</button>
+          <div class="daily-hero daily-hero--compact">
+            <div class="daily-day-nav daily-day-nav--inline" role="toolbar" aria-label="מעבר בין ימים">
+              <button type="button" id="hourlyScheduleDayPrev" class="btn btn-ghost daily-day-nav-arrow" aria-label="יום לפני">‹</button>
+              <div id="hourlyScheduleDateTitle" class="daily-date-title daily-date-title--compact"></div>
+              <button type="button" id="hourlyScheduleDayNext" class="btn btn-ghost daily-day-nav-arrow" aria-label="יום אחרי">›</button>
             </div>
-            <label class="hourly-date-pick checkline">
-              בחירת תאריך
-              <input id="hourlyScheduleDateInput" class="input" type="date" />
-            </label>
+            <button type="button" id="hourlyScheduleJumpToday" class="btn btn-ghost daily-jump-today hidden">חזרה להיום</button>
+            <input id="hourlyScheduleDateInput" class="hidden" type="date" tabindex="-1" aria-hidden="true" />
           </div>
 
           <form id="hourlyScheduleAddForm" class="hourly-add-form" autocomplete="off">
-            <input id="hourlyScheduleTitle" class="input" type="text" maxlength="200" placeholder="מה עושים?" required />
-            <div class="hourly-times-row" role="group" aria-label="שעת התחלה וסיום">
+            <input id="hourlyScheduleTitle" class="input" type="text" maxlength="200" placeholder="מה לעשות מחר / היום…" required />
+            <label class="checkline hourly-has-time">
+              <input id="hourlyAddHasTime" type="checkbox" />
+              עם שעת תזכורת
+            </label>
+            <div id="hourlyAddTimeRow" class="hourly-times-row hidden" role="group" aria-label="שעת תזכורת">
               <div class="hourly-time-chip">
-                <span>מ־</span>
-                <select id="hourlyScheduleStartH" class="select hourly-hm" aria-label="שעת התחלה"></select>
+                <span>ב־</span>
+                <select id="hourlyScheduleStartH" class="select hourly-hm" aria-label="שעה"></select>
                 <span class="hourly-hm-colon" aria-hidden="true">:</span>
-                <select id="hourlyScheduleStartM" class="select hourly-hm" aria-label="דקות התחלה"></select>
-              </div>
-              <div class="hourly-time-chip">
-                <span>עד</span>
-                <select id="hourlyScheduleEndH" class="select hourly-hm" aria-label="שעת סיום"></select>
-                <span class="hourly-hm-colon" aria-hidden="true">:</span>
-                <select id="hourlyScheduleEndM" class="select hourly-hm" aria-label="דקות סיום"></select>
+                <select id="hourlyScheduleStartM" class="select hourly-hm" aria-label="דקות"></select>
               </div>
             </div>
-            <button class="btn" type="submit">הוספה ללו״ז</button>
+            <p class="hourly-add-hint">בלי שעה — תזכורת ב־10:00 עם כל הרשימה. עם שעה — תזכורת באותו רגע.</p>
+            <button class="btn" type="submit">הוספה</button>
           </form>
 
-          <div id="hourlyScheduleTimeline" class="hourly-timeline" aria-label="לוח שעות"></div>
+          <div id="hourlyScheduleList" class="hourly-task-list" aria-label="משימות הלו״ז"></div>
           <div id="hourlyScheduleProgress" class="daily-progress"></div>
         </div>
       </div>
@@ -560,18 +555,16 @@
       <form method="dialog" class="dialog-inner" id="hourlyScheduleEditForm">
         <div class="dialog-title">עריכת משימה בלו״ז</div>
         <input id="hourlyScheduleEditTitle" class="input" type="text" maxlength="200" autocomplete="off" />
-        <div class="hourly-times-row hourly-times-row--edit" role="group" aria-label="שעת התחלה וסיום">
+        <label class="checkline hourly-has-time">
+          <input id="hourlyEditHasTime" type="checkbox" />
+          עם שעת תזכורת
+        </label>
+        <div id="hourlyEditTimeRow" class="hourly-times-row hourly-times-row--edit hidden" role="group" aria-label="שעת תזכורת">
           <div class="hourly-time-chip">
-            <span>מ־</span>
-            <select id="hourlyScheduleEditStartH" class="select hourly-hm" aria-label="שעת התחלה"></select>
+            <span>ב־</span>
+            <select id="hourlyScheduleEditStartH" class="select hourly-hm" aria-label="שעה"></select>
             <span class="hourly-hm-colon" aria-hidden="true">:</span>
-            <select id="hourlyScheduleEditStartM" class="select hourly-hm" aria-label="דקות התחלה"></select>
-          </div>
-          <div class="hourly-time-chip">
-            <span>עד</span>
-            <select id="hourlyScheduleEditEndH" class="select hourly-hm" aria-label="שעת סיום"></select>
-            <span class="hourly-hm-colon" aria-hidden="true">:</span>
-            <select id="hourlyScheduleEditEndM" class="select hourly-hm" aria-label="דקות סיום"></select>
+            <select id="hourlyScheduleEditStartM" class="select hourly-hm" aria-label="דקות"></select>
           </div>
         </div>
         <div class="dialog-actions">

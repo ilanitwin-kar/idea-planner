@@ -50,9 +50,13 @@ import {
   addScheduleBlock,
   updateScheduleBlock,
   deleteScheduleBlock,
+  toggleScheduleBlockDone,
+  addScheduleSub,
+  toggleScheduleSubDone,
+  deleteScheduleSub,
   blocksForDay,
+  blockHasTime,
   scheduleDayProgress,
-  timeStringToMinutes,
   minutesToTimeString,
 } from "./hourly-schedule.js";
 import {
@@ -518,12 +522,8 @@ function persistDayJournal() {
 let timingState = loadTimingState();
 let pantryState = loadPantry();
 let hourlySchedule = loadHourlySchedule();
-/** יום שמוצג בלו״ז השעות */
+/** יום שמוצג בלו״ז */
 let hourlyBrowseDateKey = localDateKey();
-
-const HOURLY_TIMELINE_START_MIN = 6 * 60;
-const HOURLY_TIMELINE_END_MIN = 23 * 60;
-const HOURLY_TIMELINE_ROW_PX = 52;
 
 const scheduleHourlyPushSync = debounce(700, () => {
   if (notificationPermission() !== "granted") return;
@@ -925,6 +925,12 @@ function renderAggregatedPlanSections(container, mode) {
   return totalDone;
 }
 
+function formatHebrewDateShort(dateKey) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "short" });
+}
+
 function formatHebrewDateLabel(dateKey) {
   const [y, m, d] = dateKey.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
@@ -1174,15 +1180,20 @@ function syncDailyTodayFormPlaceSelect(dateKey) {
   const inputEl = document.getElementById("dailyTodayInput");
   if (!kindEl || !underEl) return;
   const isPlace = kindEl.value === "place";
-  underEl.classList.toggle("hidden", isPlace);
   if (inputEl) {
     inputEl.placeholder = isPlace
       ? "שם המקום (למשל מכבי פארם)…"
       : "משימה או מה לקנות…";
   }
-  if (isPlace) return;
+  const placeBtn = document.getElementById("dailyTodayAddPlaceBtn");
+  if (placeBtn) placeBtn.textContent = isPlace ? "ביטול — חזרה למשימה" : "+ כותרת מקום";
+  if (isPlace) {
+    underEl.classList.add("hidden");
+    return;
+  }
   const day = dayJournal.days[dateKey];
   const places = (day?.items ?? []).filter((x) => x.kind === "place");
+  underEl.classList.toggle("hidden", places.length === 0);
   const prev = underEl.value;
   underEl.innerHTML =
     `<option value="">— ברשימה הראשית (לא תחת חנות) —</option>` +
@@ -1206,12 +1217,10 @@ function renderDailyTodayPage() {
   const calendarToday = localDateKey();
   const viewKey = dailyBrowseDateKey;
   const titleEl = document.getElementById("dailyTodayTitle");
-  const subEl = document.getElementById("dailyTodaySub");
   const progEl = document.getElementById("dailyTodayProgress");
   const jumpBtn = document.getElementById("dailyJumpToday");
 
-  if (titleEl) titleEl.textContent = formatHebrewDateLabel(viewKey);
-  if (subEl) subEl.textContent = "";
+  if (titleEl) titleEl.textContent = formatHebrewDateShort(viewKey);
   if (jumpBtn) {
     const showJump = viewKey !== calendarToday;
     jumpBtn.classList.toggle("hidden", !showJump);
@@ -1238,9 +1247,32 @@ function renderDailyTodayPage() {
   }
   syncDailyTodayFormPlaceSelect(viewKey);
 
+  const nextEl = document.getElementById("dailyTodayNextHourly");
+  if (nextEl) {
+    if (viewKey !== calendarToday) {
+      nextEl.classList.add("hidden");
+      nextEl.textContent = "";
+    } else {
+      const now = new Date();
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      const upcoming = blocksForDay(hourlySchedule, calendarToday)
+        .filter((b) => !b.done && blockHasTime(b) && b.startMin >= nowMin)[0];
+      if (!upcoming) {
+        nextEl.classList.add("hidden");
+        nextEl.textContent = "";
+      } else {
+        nextEl.classList.remove("hidden");
+        nextEl.textContent = `הבא בלו״ז: ${upcoming.title} · ${minutesToTimeString(upcoming.startMin)}`;
+      }
+    }
+  }
+
   const ideasBlock = document.getElementById("dailyTodayIdeasBlock");
-  if (ideasBlock) ideasBlock.classList.toggle("hidden", viewKey !== calendarToday);
-  if (viewKey === calendarToday) renderTodayIdeasOnDailyPage();
+  if (viewKey !== calendarToday) {
+    ideasBlock?.classList.add("hidden");
+  } else {
+    renderTodayIdeasOnDailyPage();
+  }
 }
 
 function shiftHourlyBrowse(deltaDays) {
@@ -1280,26 +1312,27 @@ function fillHourlyHourSelect(sel) {
 }
 
 function initHourlyTimeSelects() {
-  for (const id of [
-    "hourlyScheduleStartH",
-    "hourlyScheduleEndH",
-    "hourlyScheduleEditStartH",
-    "hourlyScheduleEditEndH",
-  ]) {
+  for (const id of ["hourlyScheduleStartH", "hourlyScheduleEditStartH"]) {
     fillHourlyHourSelect(document.getElementById(id));
   }
-  for (const id of [
-    "hourlyScheduleStartM",
-    "hourlyScheduleEndM",
-    "hourlyScheduleEditStartM",
-    "hourlyScheduleEditEndM",
-  ]) {
+  for (const id of ["hourlyScheduleStartM", "hourlyScheduleEditStartM"]) {
     fillHourlyMinuteSelect(document.getElementById(id));
   }
-  if (!document.getElementById("hourlyScheduleStartH")?.value) {
-    setHourlyHmPair("hourlyScheduleStart", 9 * 60);
-    setHourlyHmPair("hourlyScheduleEnd", 10 * 60);
-  }
+  setHourlyHmPair("hourlyScheduleStart", nearbyHourlyDefaultStart());
+}
+
+function nearbyHourlyDefaultStart() {
+  const now = new Date();
+  const raw = now.getHours() * 60 + now.getMinutes();
+  const step = 5;
+  let start = Math.round(raw / step) * step;
+  return Math.max(0, Math.min(23 * 60, start));
+}
+
+function syncHourlyTimeRow(checkId, rowId, pairPrefix, startMin) {
+  const on = !!document.getElementById(checkId)?.checked;
+  document.getElementById(rowId)?.classList.toggle("hidden", !on);
+  if (on) setHourlyHmPair(pairPrefix, Number.isFinite(startMin) ? startMin : nearbyHourlyDefaultStart());
 }
 
 function setHourlyHmPair(prefix, totalMin) {
@@ -1328,13 +1361,59 @@ function openHourlyScheduleEditDialog(dateKey, blockId) {
   const dlg = document.getElementById("hourlyScheduleEditDialog");
   if (!(dlg instanceof HTMLDialogElement)) return;
   document.getElementById("hourlyScheduleEditTitle").value = blk.title;
-  setHourlyHmPair("hourlyScheduleEditStart", blk.startMin);
-  setHourlyHmPair("hourlyScheduleEditEnd", blk.endMin);
+  const hasTime = blockHasTime(blk);
+  const hasEl = document.getElementById("hourlyEditHasTime");
+  if (hasEl instanceof HTMLInputElement) hasEl.checked = hasTime;
+  syncHourlyTimeRow("hourlyEditHasTime", "hourlyEditTimeRow", "hourlyScheduleEditStart", hasTime ? blk.startMin : nearbyHourlyDefaultStart());
   document.getElementById("hourlyScheduleEditDone").checked = !!blk.done;
   dlg.dataset.editDateKey = dateKey;
   dlg.dataset.editBlockId = blockId;
   dlg.showModal();
   queueMicrotask(() => document.getElementById("hourlyScheduleEditTitle")?.focus());
+}
+
+function hourlyTaskCardHtml(viewKey, blk) {
+  const timed = blockHasTime(blk);
+  const timeBadge = timed
+    ? `<span class="hourly-task-time">${escapeHtml(minutesToTimeString(blk.startMin))}</span>`
+    : "";
+  const subs = Array.isArray(blk.subs) ? blk.subs : [];
+  const subRows = subs
+    .map(
+      (s) => `
+        <div class="hourly-sub ${s.done ? "done" : ""}">
+          <label class="daily-check">
+            <input type="checkbox" ${s.done ? "checked" : ""} data-action="hourly-toggle-sub" data-date-key="${escapeHtml(viewKey)}" data-block-id="${escapeHtml(blk.id)}" data-sub-id="${escapeHtml(s.id)}" />
+            <span class="daily-item-text">${escapeHtml(s.title)}</span>
+          </label>
+          <button type="button" class="hourly-sub-del" data-action="hourly-delete-sub" data-date-key="${escapeHtml(viewKey)}" data-block-id="${escapeHtml(blk.id)}" data-sub-id="${escapeHtml(s.id)}" aria-label="מחיקת תת־משימה">×</button>
+        </div>`,
+    )
+    .join("");
+  return `
+    <article class="hourly-task ${blk.done ? "done" : ""}">
+      <div class="hourly-task-head">
+        <label class="daily-check">
+          <input type="checkbox" ${blk.done ? "checked" : ""} data-action="hourly-toggle-done" data-date-key="${escapeHtml(viewKey)}" data-block-id="${escapeHtml(blk.id)}" />
+          <span class="daily-item-text">${escapeHtml(blk.title)}</span>
+        </label>
+        ${timeBadge}
+        <div class="daily-item-actions">
+          <details class="daily-kebab">
+            <summary class="daily-kebab-summary" aria-label="פעולות למשימה">⋮</summary>
+            <div class="daily-kebab-menu" role="menu">
+              <button type="button" class="daily-kebab-item" role="menuitem" data-action="hourly-edit-block" data-date-key="${escapeHtml(viewKey)}" data-block-id="${escapeHtml(blk.id)}">עריכה</button>
+              <button type="button" class="daily-kebab-item daily-kebab-item--danger" role="menuitem" data-action="hourly-delete-block" data-date-key="${escapeHtml(viewKey)}" data-block-id="${escapeHtml(blk.id)}">מחיקה</button>
+            </div>
+          </details>
+        </div>
+      </div>
+      <div class="hourly-subs">${subRows}</div>
+      <form class="hourly-sub-add" data-action="hourly-add-sub" data-date-key="${escapeHtml(viewKey)}" data-block-id="${escapeHtml(blk.id)}" autocomplete="off">
+        <input class="input hourly-sub-input" type="text" maxlength="200" placeholder="תת־משימה (מסמך, שעה למייבש…)" />
+        <button class="btn btn-ghost" type="submit">+</button>
+      </form>
+    </article>`;
 }
 
 function renderHourlySchedulePage() {
@@ -1343,89 +1422,39 @@ function renderHourlySchedulePage() {
   const titleEl = document.getElementById("hourlyScheduleDateTitle");
   const dateInp = document.getElementById("hourlyScheduleDateInput");
   const jumpBtn = document.getElementById("hourlyScheduleJumpToday");
-  const timeline = document.getElementById("hourlyScheduleTimeline");
+  const listEl = document.getElementById("hourlyScheduleList");
   const progEl = document.getElementById("hourlyScheduleProgress");
 
-  if (titleEl) titleEl.textContent = formatHebrewDateLabel(viewKey);
+  if (titleEl) titleEl.textContent = formatHebrewDateShort(viewKey);
   if (dateInp instanceof HTMLInputElement && dateInp.value !== viewKey) dateInp.value = viewKey;
   if (jumpBtn) jumpBtn.classList.toggle("hidden", viewKey === calendarToday);
+  if (!listEl) return;
 
-  if (!timeline) return;
-
-  const startMin = HOURLY_TIMELINE_START_MIN;
-  const endMin = HOURLY_TIMELINE_END_MIN;
-  const rowPx = HOURLY_TIMELINE_ROW_PX;
-  const totalMin = endMin - startMin;
-  const bodyHeight = (totalMin / 60) * rowPx;
   const blocks = blocksForDay(hourlySchedule, viewKey);
+  const timed = blocks.filter((b) => blockHasTime(b));
+  const untimed = blocks.filter((b) => !blockHasTime(b));
 
-  const hoursCol = document.createElement("div");
-  hoursCol.className = "hourly-timeline-hours";
-  hoursCol.setAttribute("aria-hidden", "true");
-  for (let m = startMin; m <= endMin; m += 60) {
-    const lab = document.createElement("div");
-    lab.className = "hourly-hour-label";
-    lab.style.height = `${rowPx}px`;
-    lab.textContent = minutesToTimeString(m);
-    hoursCol.appendChild(lab);
+  const parts = [];
+  if (timed.length) {
+    parts.push(`<h3 class="hourly-section-title">עם שעה</h3>`);
+    parts.push(...timed.map((b) => hourlyTaskCardHtml(viewKey, b)));
   }
-
-  const grid = document.createElement("div");
-  grid.className = "hourly-timeline-grid";
-  grid.style.height = `${bodyHeight}px`;
-  for (let m = startMin; m < endMin; m += 60) {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "hourly-hour-row";
-    row.style.height = `${rowPx}px`;
-    row.dataset.action = "hourly-pick-hour";
-    row.dataset.hour = String(Math.floor(m / 60));
-    row.setAttribute("aria-label", `הוספה בשעה ${minutesToTimeString(m)}`);
-    grid.appendChild(row);
+  if (untimed.length) {
+    parts.push(`<h3 class="hourly-section-title">בלי שעה · תזכורת ב־10:00</h3>`);
+    parts.push(...untimed.map((b) => hourlyTaskCardHtml(viewKey, b)));
   }
-
-  const blocksLayer = document.createElement("div");
-  blocksLayer.className = "hourly-timeline-blocks";
-  blocksLayer.style.height = `${bodyHeight}px`;
-  for (const blk of blocks) {
-    const topPx = ((blk.startMin - startMin) / 60) * rowPx;
-    const heightPx = Math.max(((blk.endMin - blk.startMin) / 60) * rowPx, rowPx * 0.45);
-    if (blk.endMin <= startMin || blk.startMin >= endMin) continue;
-    const el = document.createElement("button");
-    el.type = "button";
-    el.className = `hourly-block${blk.done ? " hourly-block--done" : ""}`;
-    el.style.top = `${Math.max(0, topPx)}px`;
-    el.style.height = `${heightPx}px`;
-    el.dataset.action = "hourly-edit-block";
-    el.dataset.dateKey = viewKey;
-    el.dataset.blockId = blk.id;
-    const when = `${minutesToTimeString(blk.startMin)}–${minutesToTimeString(blk.endMin)}`;
-    el.innerHTML = `
-      <div class="hourly-block-time">${escapeHtml(when)}</div>
-      <div class="hourly-block-title">${escapeHtml(blk.title)}</div>
-    `;
-    blocksLayer.appendChild(el);
+  if (!blocks.length) {
+    listEl.innerHTML = `<div class="empty">רשימה ליום — כמו במחברת. אפשר בלי שעה, ואפשר תתי־משימות.</div>`;
+  } else {
+    listEl.innerHTML = parts.join("");
   }
-
-  const body = document.createElement("div");
-  body.className = "hourly-timeline-body";
-  body.appendChild(grid);
-  body.appendChild(blocksLayer);
-
-  const inner = document.createElement("div");
-  inner.className = "hourly-timeline-inner";
-  inner.appendChild(hoursCol);
-  inner.appendChild(body);
-
-  timeline.replaceChildren(inner);
 
   const pr = scheduleDayProgress(hourlySchedule, viewKey);
   if (progEl) {
-    if (!pr.total) progEl.textContent = "לחצי על שורת שעה בלוח או מלאי טופס למעלה.";
+    if (!pr.total) progEl.textContent = "הוסיפי למעלה מה יש לעשות.";
     else progEl.textContent = `${pr.done}/${pr.total} משימות בלו״ז`;
-    const perm = notificationPermission();
-    if (perm === "granted") {
-      progEl.textContent += " · תזכורת בשעת ההתחלה פעילה";
+    if (notificationPermission() === "granted") {
+      progEl.textContent += " · התראות פעילות";
     }
   }
 }
@@ -2127,6 +2156,7 @@ function collectSubtasksForToday() {
 }
 
 function renderTodayIdeasOnDailyPage() {
+  const ideasBlock = document.getElementById("dailyTodayIdeasBlock");
   const ideasRoot = document.getElementById("todayTasksIdeasRoot");
   if (!ideasRoot) return;
   ideasRoot.innerHTML = "";
@@ -2135,12 +2165,10 @@ function renderTodayIdeasOnDailyPage() {
     .map((t) => ({ ...t, subs: (t.subs ?? []).filter((s) => !s.done) }))
     .filter((t) => t.subs.length > 0);
   if (openTasks.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty plan-empty";
-    empty.innerHTML = `<div class="empty-title">אין תתי־משימות להיום</div><p class="dialog-hint">מה שמתוזמן ברעיונות להיום יופיע כאן.</p>`;
-    ideasRoot.appendChild(empty);
+    ideasBlock?.classList.add("hidden");
     return;
   }
+  ideasBlock?.classList.remove("hidden");
   const wrap = document.createElement("section");
   wrap.className = "plan-date-block";
   wrap.innerHTML = `<div class="plan-date-body"></div>`;
@@ -4012,7 +4040,7 @@ function wireGlobalHandlers() {
         await enableHourlyPush(settings);
         await syncHourlyRemindersToServer(settings, hourlySchedule);
         refreshPushNotifyPanel();
-        toast("התראות לו״ז הופעלו. בשעת ההתחלה תקבל תזכורת בטלפון.");
+        toast("התראות לו״ז הופעלו: בשעה שסימנת, וב־10:00 סיכום של מה שבלי שעה.");
       } catch (e) {
         console.error(e);
         const msg = String(e?.message || e);
@@ -4346,6 +4374,21 @@ function wireGlobalHandlers() {
   });
 
   initHourlyTimeSelects();
+  document.getElementById("hourlyAddHasTime")?.addEventListener("change", () => {
+    syncHourlyTimeRow("hourlyAddHasTime", "hourlyAddTimeRow", "hourlyScheduleStart");
+  });
+  document.getElementById("hourlyEditHasTime")?.addEventListener("change", () => {
+    const dlg = document.getElementById("hourlyScheduleEditDialog");
+    const dateKey = dlg?.dataset?.editDateKey;
+    const blockId = dlg?.dataset?.editBlockId;
+    const blk = dateKey && blockId ? hourlySchedule.days[dateKey]?.blocks?.find((x) => x.id === blockId) : null;
+    syncHourlyTimeRow(
+      "hourlyEditHasTime",
+      "hourlyEditTimeRow",
+      "hourlyScheduleEditStart",
+      blockHasTime(blk) ? blk.startMin : nearbyHourlyDefaultStart(),
+    );
+  });
   document.getElementById("hourlyScheduleDayPrev")?.addEventListener("click", () => shiftHourlyBrowse(-1));
   document.getElementById("hourlyScheduleDayNext")?.addEventListener("click", () => shiftHourlyBrowse(1));
   document.getElementById("hourlyScheduleJumpToday")?.addEventListener("click", () => {
@@ -4360,37 +4403,86 @@ function wireGlobalHandlers() {
   document.getElementById("hourlyScheduleAddForm")?.addEventListener("submit", (e) => {
     e.preventDefault();
     const title = document.getElementById("hourlyScheduleTitle")?.value?.trim();
-    const startMin = getHourlyHmPair("hourlyScheduleStart");
-    if (!title || startMin == null) {
-      toast("נא למלא משימה ושעת התחלה.");
+    if (!title) {
+      toast("נא למלא משימה.");
       return;
     }
-    let endMin = getHourlyHmPair("hourlyScheduleEnd");
-    if (endMin == null) endMin = Math.min(startMin + 60, 24 * 60 - 1);
-    if (endMin <= startMin) endMin = Math.min(startMin + 60, 24 * 60 - 1);
-    addScheduleBlock(hourlySchedule, hourlyBrowseDateKey, uid("hs"), title, startMin, endMin);
+    const withTime = !!document.getElementById("hourlyAddHasTime")?.checked;
+    const startMin = withTime ? getHourlyHmPair("hourlyScheduleStart") : null;
+    if (withTime && startMin == null) {
+      toast("נא לבחור שעה.");
+      return;
+    }
+    addScheduleBlock(hourlySchedule, hourlyBrowseDateKey, uid("hs"), title, startMin);
     persistHourlySchedule();
     document.getElementById("hourlyScheduleTitle").value = "";
     toast("נוסף ללו״ז.");
     render();
   });
 
-  document.getElementById("hourlyScheduleTimeline")?.addEventListener("click", (e) => {
-    const pick = e.target.closest("[data-action='hourly-pick-hour']");
-    if (pick) {
-      const h = Number(pick.dataset.hour);
-      if (!Number.isFinite(h)) return;
-      const startMin = h * 60;
-      const endMin = Math.min(startMin + 60, 24 * 60 - 1);
-      setHourlyHmPair("hourlyScheduleStart", startMin);
-      setHourlyHmPair("hourlyScheduleEnd", endMin);
-      document.getElementById("hourlyScheduleTitle")?.focus();
+  document.getElementById("hourlyScheduleList")?.addEventListener("change", (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLInputElement) || t.type !== "checkbox") return;
+    const action = t.getAttribute("data-action");
+    const dk = t.getAttribute("data-date-key");
+    const id = t.getAttribute("data-block-id");
+    if (action === "hourly-toggle-done" && dk && id) {
+      toggleScheduleBlockDone(hourlySchedule, dk, id);
+      persistHourlySchedule();
+      render();
+      return;
+    }
+    const subId = t.getAttribute("data-sub-id");
+    if (action === "hourly-toggle-sub" && dk && id && subId) {
+      toggleScheduleSubDone(hourlySchedule, dk, id, subId);
+      persistHourlySchedule();
+      render();
+    }
+  });
+
+  document.getElementById("hourlyScheduleList")?.addEventListener("click", (e) => {
+    const subDel = e.target.closest("[data-action='hourly-delete-sub']");
+    if (subDel) {
+      e.preventDefault();
+      const dk = subDel.getAttribute("data-date-key");
+      const id = subDel.getAttribute("data-block-id");
+      const subId = subDel.getAttribute("data-sub-id");
+      if (dk && id && subId) {
+        deleteScheduleSub(hourlySchedule, dk, id, subId);
+        persistHourlySchedule();
+        render();
+      }
       return;
     }
     const edit = e.target.closest("[data-action='hourly-edit-block']");
     if (edit) {
       openHourlyScheduleEditDialog(edit.dataset.dateKey, edit.dataset.blockId);
+      return;
     }
+    const del = e.target.closest("[data-action='hourly-delete-block']");
+    if (del) {
+      const dk = del.getAttribute("data-date-key");
+      const id = del.getAttribute("data-block-id");
+      if (!dk || !id) return;
+      if (!confirm("למחוק את המשימה מהלו״ז?")) return;
+      deleteScheduleBlock(hourlySchedule, dk, id);
+      persistHourlySchedule();
+      render();
+    }
+  });
+
+  document.getElementById("hourlyScheduleList")?.addEventListener("submit", (e) => {
+    const form = e.target.closest("form[data-action='hourly-add-sub']");
+    if (!form) return;
+    e.preventDefault();
+    const dk = form.getAttribute("data-date-key");
+    const id = form.getAttribute("data-block-id");
+    const input = form.querySelector(".hourly-sub-input");
+    const title = input instanceof HTMLInputElement ? input.value.trim() : "";
+    if (!dk || !id || !title) return;
+    addScheduleSub(hourlySchedule, dk, id, uid("hss"), title);
+    persistHourlySchedule();
+    render();
   });
 
   document.getElementById("hourlyScheduleEditSave")?.addEventListener("click", () => {
@@ -4399,21 +4491,20 @@ function wireGlobalHandlers() {
     const dateKey = dlg.dataset.editDateKey;
     const blockId = dlg.dataset.editBlockId;
     const title = document.getElementById("hourlyScheduleEditTitle")?.value?.trim();
-    const startMin = getHourlyHmPair("hourlyScheduleEditStart");
-    const endMin = getHourlyHmPair("hourlyScheduleEditEnd");
+    const withTime = !!document.getElementById("hourlyEditHasTime")?.checked;
+    const startMin = withTime ? getHourlyHmPair("hourlyScheduleEditStart") : null;
     const done = !!document.getElementById("hourlyScheduleEditDone")?.checked;
-    if (!dateKey || !blockId || !title || startMin == null || endMin == null) {
-      toast("נא למלא את כל השדות.");
+    if (!dateKey || !blockId || !title || (withTime && startMin == null)) {
+      toast("נא למלא כותרת, ואם יש תזכורת — גם שעה.");
       return;
     }
     const ok = updateScheduleBlock(hourlySchedule, dateKey, blockId, {
       title,
       startMin,
-      endMin,
       done,
     });
     if (!ok) {
-      toast("לא נשמר — בדקי את הטקסט והשעות.");
+      toast("לא נשמר — בדקי את הטקסט.");
       return;
     }
     persistHourlySchedule();
@@ -4821,6 +4912,13 @@ function wireGlobalHandlers() {
 
   document.getElementById("dailyTodayKind")?.addEventListener("change", () => {
     syncDailyTodayFormPlaceSelect(dailyBrowseDateKey);
+  });
+  document.getElementById("dailyTodayAddPlaceBtn")?.addEventListener("click", () => {
+    const kindEl = document.getElementById("dailyTodayKind");
+    if (!kindEl) return;
+    kindEl.value = kindEl.value === "place" ? "task" : "place";
+    syncDailyTodayFormPlaceSelect(dailyBrowseDateKey);
+    document.getElementById("dailyTodayInput")?.focus();
   });
 
   document.getElementById("dailyTodayForm")?.addEventListener("submit", (e) => {
