@@ -110,3 +110,25 @@ export function scheduleDayProgress(state, dateKey) {
   const done = blocks.filter((x) => x.done).length;
   return { total: blocks.length, done };
 }
+
+/** כל הבלוקים בכל הימים — לתזכורות */
+export function collectAllScheduleBlocks(state) {
+  const out = [];
+  for (const [dateKey, day] of Object.entries(state?.days ?? {})) {
+    for (const blk of day?.blocks ?? []) {
+      if (!blk?.id) continue;
+      out.push({ dateKey, block: blk });
+    }
+  }
+  return out;
+}
+
+/** חצות מקומית + דקות → epoch ms */
+export function hourlyBlockFireAtMs(dateKey, startMin) {
+  const [y, m, d] = String(dateKey).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const dt = new Date(y, m - 1, d, 0, 0, 0, 0);
+  dt.setMinutes(Number(startMin) || 0);
+  const t = dt.getTime();
+  return Number.isFinite(t) ? t : null;
+}

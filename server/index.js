@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import { openDb, run, all } from "./db.js";
 import { configureWebPush } from "./push.js";
-import { startScheduler } from "./scheduler.js";
+import { startScheduler, processDueReminders } from "./scheduler.js";
 import webpush from "web-push";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -127,8 +127,11 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 app.get("/vapidPublicKey", (req, res) => {
   res.json({ publicKey: VAPID_KEYS.publicKey });
 });
+app.get("/api/vapidPublicKey", (req, res) => {
+  res.json({ publicKey: VAPID_KEYS.publicKey });
+});
 
-app.post("/subscribe", async (req, res) => {
+async function handleSubscribe(req, res) {
   const sub = req.body?.subscription;
   const userKey = String(req.body?.userKey ?? "local");
   const endpoint = sub?.endpoint;
@@ -141,7 +144,10 @@ app.post("/subscribe", async (req, res) => {
     [endpoint, userKey, p256dh, auth, Date.now()],
   );
   res.json({ ok: true });
-});
+}
+
+app.post("/subscribe", handleSubscribe);
+app.post("/api/subscribe", handleSubscribe);
 
 app.post("/reminders/upsert", async (req, res) => {
   const { userKey, subtaskId, reminders } = req.body ?? {};
@@ -176,6 +182,45 @@ app.post("/reminders/delete", async (req, res) => {
 app.get("/debug/reminders", async (req, res) => {
   const rows = await all(db, `SELECT * FROM reminders ORDER BY fire_at ASC LIMIT 200`, []);
   res.json({ reminders: rows });
+});
+
+app.post("/api/reminders", async (req, res) => {
+  const op = String(req.body?.op || "");
+  const u = String(req.body?.userKey ?? "local");
+  if (op !== "replace-hourly") return res.status(400).json({ error: "unknown_op" });
+  const incoming = Array.isArray(req.body?.reminders) ? req.body.reminders : [];
+  await run(db, `DELETE FROM reminders WHERE user_key = ? AND subtask_id LIKE 'hourly:%' AND sent_at IS NULL`, [u]);
+  for (const r of incoming) {
+    const id = String(r?.id || "");
+    const title = String(r?.title || "").trim();
+    const body = String(r?.body || "").trim();
+    const url = String(r?.url || "/");
+    const fire = Number(r?.fireAt);
+    if (!id || !title || !body || !Number.isFinite(fire)) continue;
+    await run(
+      db,
+      `INSERT INTO reminders(subtask_id, reminder_key, user_key, title, body, url, fire_at, created_at) VALUES(?,?,?,?,?,?,?,?)`,
+      [id, "start", u, title, body, url, fire, Date.now()],
+    );
+  }
+  res.json({ ok: true, count: incoming.length });
+});
+
+app.get("/api/push-tick", async (req, res) => {
+  try {
+    const result = await processDueReminders(db);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ error: "tick_failed", detail: String(e?.message || e) });
+  }
+});
+app.post("/api/push-tick", async (req, res) => {
+  try {
+    const result = await processDueReminders(db);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ error: "tick_failed", detail: String(e?.message || e) });
+  }
 });
 
 function firebaseConfigFromProcessEnv() {

@@ -21,6 +21,7 @@
     "firebase": "^12.12.1",
     "html2pdf.js": "^0.14.0",
     "pdfjs-dist": "^5.7.284",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "web-push": "^3.6.7"
   }
 }

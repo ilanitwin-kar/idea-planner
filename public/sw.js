@@ -1,4 +1,4 @@
-const CACHE = "idea-planner-cache-v12";
+const CACHE = "idea-planner-cache-v13";
 
 /** קבצים שקיימים תמיד אחרי build — בלי נתיבי hashed שלא ייכשלו ב־addAll */
 const PRECACHE = [

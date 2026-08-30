@@ -56,6 +56,13 @@ import {
   minutesToTimeString,
 } from "./hourly-schedule.js";
 import {
+  enableHourlyPush,
+  syncHourlyRemindersToServer,
+  tickLocalHourlyReminders,
+  notificationPermission,
+  pushStatusText,
+} from "./push-client.js";
+import {
   LUNCH_PLANNER_STORAGE_KEY,
   loadLunchPlanner,
   saveLunchPlanner,
@@ -378,9 +385,10 @@ function loadSettings() {
     return {
       defaultCalMode: x?.defaultCalMode === "day" || x?.defaultCalMode === "month" ? x.defaultCalMode : "week",
       cloudAutoBackup: x?.cloudAutoBackup === true,
+      pushServerUrl: typeof x?.pushServerUrl === "string" ? x.pushServerUrl : "",
     };
   } catch {
-    return { defaultCalMode: "week", cloudAutoBackup: false };
+    return { defaultCalMode: "week", cloudAutoBackup: false, pushServerUrl: "" };
   }
 }
 function saveSettings() {
@@ -437,7 +445,6 @@ const APP_MODE_KEY = "idea-planner:app-mode:v1";
 const APP_MODES = [
   "ideas",
   "daily-today",
-  "today-tasks",
   "daily-future",
   "daily-history",
   "daily-master",
@@ -447,9 +454,14 @@ const APP_MODES = [
   "lunch-planner",
 ];
 
+const APP_MODE_ALIASES = {
+  "today-tasks": "daily-today",
+};
+
 function loadAppMode() {
   try {
     const v = localStorage.getItem(APP_MODE_KEY);
+    if (APP_MODE_ALIASES[v]) return APP_MODE_ALIASES[v];
     if (APP_MODES.includes(v)) return v;
   } catch {
     /* ignore */
@@ -513,9 +525,17 @@ const HOURLY_TIMELINE_START_MIN = 6 * 60;
 const HOURLY_TIMELINE_END_MIN = 23 * 60;
 const HOURLY_TIMELINE_ROW_PX = 52;
 
+const scheduleHourlyPushSync = debounce(700, () => {
+  if (notificationPermission() !== "granted") return;
+  void syncHourlyRemindersToServer(settings, hourlySchedule).catch((e) => {
+    console.warn("hourly push sync", e);
+  });
+});
+
 function persistHourlySchedule() {
   saveHourlySchedule(hourlySchedule);
   scheduleCloudBackupIfEnabled();
+  scheduleHourlyPushSync();
 }
 
 let lunchPlanner = loadLunchPlanner();
@@ -537,6 +557,35 @@ function loadLunchPlannerTab() {
 let lunchPlannerTab = loadLunchPlannerTab();
 /** רכיבים שטרם אוחדו למנה — לפי מפתח יום (תכנון שבוע) */
 let lunchDayDraftParts = {};
+
+const HOME_TAB_KEY = "idea-planner:home-tab:v1";
+function loadHomeTab() {
+  try {
+    const v = localStorage.getItem(HOME_TAB_KEY);
+    if (v === "pantry" || v === "lunch") return v;
+  } catch {
+    /* ignore */
+  }
+  return "lunch";
+}
+let homeTab = loadHomeTab();
+if (appMode === "pantry") homeTab = "pantry";
+else if (appMode === "lunch-planner") homeTab = "lunch";
+function persistHomeTab() {
+  try {
+    localStorage.setItem(HOME_TAB_KEY, homeTab);
+  } catch {
+    /* ignore */
+  }
+}
+function homeTabToMode(tab = homeTab) {
+  return tab === "pantry" ? "pantry" : "lunch-planner";
+}
+function setHomeTab(tab) {
+  homeTab = tab === "pantry" ? "pantry" : "lunch";
+  persistHomeTab();
+  setAppMode(homeTabToMode());
+}
 
 function persistLunchPlanner() {
   saveLunchPlanner(lunchPlanner);
@@ -882,7 +931,53 @@ function formatHebrewDateLabel(dateKey) {
   return dt.toLocaleDateString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 }
 
+function screenTitleForMode(mode) {
+  switch (mode) {
+    case "daily-today":
+      return "היום";
+    case "hourly-schedule":
+      return "לו״ז";
+    case "lunch-planner":
+    case "pantry":
+      return "בית";
+    case "ideas":
+      return "רעיונות";
+    case "daily-master":
+      return "כל הימים";
+    case "timing":
+      return "מדידות זמן";
+    case "daily-future":
+      return "בהמשך";
+    case "daily-history":
+      return "שבוצע";
+    default:
+      return "היום";
+  }
+}
+
+function syncHeaderScreenTitle() {
+  const el = document.getElementById("appScreenTitle");
+  if (el) el.textContent = screenTitleForMode(appMode);
+}
+
+function syncHomeTabsBar() {
+  const bar = document.getElementById("homeTabsBar");
+  const onHome = appMode === "lunch-planner" || appMode === "pantry";
+  bar?.classList.toggle("hidden", !onHome);
+  const lunchBtn = document.getElementById("homeTabLunch");
+  const pantryBtn = document.getElementById("homeTabPantry");
+  const lunchOn = appMode === "lunch-planner";
+  lunchBtn?.classList.toggle("active", lunchOn);
+  pantryBtn?.classList.toggle("active", !lunchOn && appMode === "pantry");
+  lunchBtn?.setAttribute("aria-selected", lunchOn ? "true" : "false");
+  pantryBtn?.setAttribute("aria-selected", !lunchOn && appMode === "pantry" ? "true" : "false");
+}
+
 function setAppMode(mode) {
+  if (APP_MODE_ALIASES[mode]) mode = APP_MODE_ALIASES[mode];
+  if (mode === "lunch-planner") homeTab = "lunch";
+  if (mode === "pantry") homeTab = "pantry";
+  if (mode === "lunch-planner" || mode === "pantry") persistHomeTab();
   appMode = mode;
   try {
     localStorage.setItem(APP_MODE_KEY, mode);
@@ -890,38 +985,35 @@ function setAppMode(mode) {
     /* ignore */
   }
   document.body.classList.toggle("app-mode-ideas", mode === "ideas");
+  document.body.classList.toggle("app-mode-home", mode === "lunch-planner" || mode === "pantry");
   if (mode === "ideas" && isMobile()) mobile.screen = "ideas";
   syncAppNavActive();
+  syncHeaderScreenTitle();
+  syncHomeTabsBar();
   window.scrollTo({ top: 0, behavior: "smooth" });
   render();
 }
 
 function syncAppNavActive() {
   const pairs = [
-    ["daily-today", "tnDailyToday"],
     ["daily-today", "bnDailyToday"],
-    ["today-tasks", "bnTodayTasks"],
-    ["ideas", "tnIdeas"],
+    ["hourly-schedule", "bnHourlySchedule"],
     ["ideas", "bnIdeas"],
-    ["daily-future", "tnDailyFuture"],
     ["daily-future", "topNavFuture"],
-    ["daily-history", "tnDailyHistory"],
     ["daily-history", "topNavHistory"],
     ["daily-master", "topNavDailyMaster"],
     ["timing", "topNavTiming"],
-    ["pantry", "topNavPantry"],
-    ["hourly-schedule", "topNavHourlySchedule"],
-    ["lunch-planner", "topNavLunchPlanner"],
   ];
   for (const [m, id] of pairs) {
     document.getElementById(id)?.classList.toggle("active", appMode === m);
   }
+  const homeOn = appMode === "lunch-planner" || appMode === "pantry";
+  document.getElementById("bnHome")?.classList.toggle("active", homeOn);
 }
 
 function updateAppViewsVisibility() {
   document.getElementById("viewIdeas")?.classList.toggle("hidden", appMode !== "ideas");
   document.getElementById("viewDailyToday")?.classList.toggle("hidden", appMode !== "daily-today");
-  document.getElementById("viewTodayTasks")?.classList.toggle("hidden", appMode !== "today-tasks");
   document.getElementById("viewDailyFuture")?.classList.toggle("hidden", appMode !== "daily-future");
   document.getElementById("viewDailyHistory")?.classList.toggle("hidden", appMode !== "daily-history");
   document.getElementById("viewDailyMaster")?.classList.toggle("hidden", appMode !== "daily-master");
@@ -929,6 +1021,8 @@ function updateAppViewsVisibility() {
   document.getElementById("viewPantry")?.classList.toggle("hidden", appMode !== "pantry");
   document.getElementById("viewHourlySchedule")?.classList.toggle("hidden", appMode !== "hourly-schedule");
   document.getElementById("viewLunchPlanner")?.classList.toggle("hidden", appMode !== "lunch-planner");
+  syncHeaderScreenTitle();
+  syncHomeTabsBar();
 }
 
 function dayItemLabel(it) {
@@ -1143,6 +1237,10 @@ function renderDailyTodayPage() {
     }
   }
   syncDailyTodayFormPlaceSelect(viewKey);
+
+  const ideasBlock = document.getElementById("dailyTodayIdeasBlock");
+  if (ideasBlock) ideasBlock.classList.toggle("hidden", viewKey !== calendarToday);
+  if (viewKey === calendarToday) renderTodayIdeasOnDailyPage();
 }
 
 function shiftHourlyBrowse(deltaDays) {
@@ -1257,6 +1355,10 @@ function renderHourlySchedulePage() {
   if (progEl) {
     if (!pr.total) progEl.textContent = "לחצי על שורת שעה בלוח או מלאי טופס למעלה.";
     else progEl.textContent = `${pr.done}/${pr.total} משימות בלו״ז`;
+    const perm = notificationPermission();
+    if (perm === "granted") {
+      progEl.textContent += " · תזכורת בשעת ההתחלה פעילה";
+    }
   }
 }
 
@@ -1956,57 +2058,38 @@ function collectSubtasksForToday() {
   return { todayK, tasks };
 }
 
-function renderTodayTasksPage() {
-  const todayK = localDateKey();
-  const progEl = document.getElementById("todayTasksProgress");
-
-  // Ideas subtasks scheduled today
+function renderTodayIdeasOnDailyPage() {
   const ideasRoot = document.getElementById("todayTasksIdeasRoot");
-  if (ideasRoot) {
-    ideasRoot.innerHTML = "";
-    const { tasks } = collectSubtasksForToday();
-    if (tasks.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "empty plan-empty";
-      empty.innerHTML = UI_EMPTY;
-      ideasRoot.appendChild(empty);
-    } else {
-      // one "date block" for today, grouped by task
-      const wrap = document.createElement("section");
-      wrap.className = "plan-date-block";
-      wrap.innerHTML = `
-        <div class="plan-date-heading">
-          <span class="plan-date-title">${escapeHtml(formatHebrewDateLabel(todayK))}</span>
-        </div>
-        <div class="plan-date-body"></div>
-      `;
-      const body = wrap.querySelector(".plan-date-body");
-      for (const task of tasks) {
-        const blk = document.createElement("div");
-        blk.className = "plan-task-block";
-        blk.innerHTML = `
-          <div class="plan-task-head">
-            <span class="plan-task-name">${escapeHtml(task.taskTitle)}</span>
-            <span class="plan-idea-pill">${escapeHtml(task.ideaTitle)}</span>
-          </div>
-          <div class="plan-subs">${task.subs.map((s) => renderSubtaskCheckboxRow(s)).join("")}</div>
-        `;
-        body.appendChild(blk);
-      }
-      ideasRoot.appendChild(wrap);
-    }
+  if (!ideasRoot) return;
+  ideasRoot.innerHTML = "";
+  const { tasks } = collectSubtasksForToday();
+  const openTasks = tasks
+    .map((t) => ({ ...t, subs: (t.subs ?? []).filter((s) => !s.done) }))
+    .filter((t) => t.subs.length > 0);
+  if (openTasks.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty plan-empty";
+    empty.innerHTML = `<div class="empty-title">אין תתי־משימות להיום</div><p class="dialog-hint">מה שמתוזמן ברעיונות להיום יופיע כאן.</p>`;
+    ideasRoot.appendChild(empty);
+    return;
   }
-
-  // Daily journal tasks for today
-  renderDayItemsList(document.getElementById("todayTasksDailyRoot"), todayK, { hideDone: true });
-
-  if (progEl) {
-    const ideaCount = collectSubtasksForToday().tasks.reduce((acc, t) => acc + (t.subs?.length ?? 0), 0);
-    const dayPr = dayProgress(dayJournal, todayK);
-    const dayCount = dayPr.total ?? 0;
-    const doneToday = dayPr.done ?? 0;
-    progEl.textContent = `מהרעיונות: ${ideaCount} • מהיום שלי: ${doneToday}/${dayCount} הושלמו`;
+  const wrap = document.createElement("section");
+  wrap.className = "plan-date-block";
+  wrap.innerHTML = `<div class="plan-date-body"></div>`;
+  const body = wrap.querySelector(".plan-date-body");
+  for (const task of openTasks) {
+    const blk = document.createElement("div");
+    blk.className = "plan-task-block";
+    blk.innerHTML = `
+      <div class="plan-task-head">
+        <span class="plan-task-name">${escapeHtml(task.taskTitle)}</span>
+        <span class="plan-idea-pill">${escapeHtml(task.ideaTitle)}</span>
+      </div>
+      <div class="plan-subs">${task.subs.map((s) => renderSubtaskCheckboxRow(s)).join("")}</div>
+    `;
+    body.appendChild(blk);
   }
+  ideasRoot.appendChild(wrap);
 }
 
 function formatShortHebrewDate(dateKey) {
@@ -2560,7 +2643,7 @@ function openDailyMasterPdfExport() {
     return;
   }
   w.document.open();
-  w.document.write(`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"/><title>משימות יומיומיות</title>
+  w.document.write(`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"/><title>כל הימים</title>
 <style>
   body{font-family:Segoe UI,Calibri,Arial,sans-serif;padding:22px;font-size:14px;line-height:1.45;color:#111;}
   h1{font-size:1.15rem;margin:0 0 6px;color:#b71c1c;}
@@ -2573,7 +2656,7 @@ function openDailyMasterPdfExport() {
     @page{margin:12mm;}
   }
 </style></head><body>
-<h1>משימות יומיומיות</h1>
+<h1>כל הימים</h1>
 <p class="meta">${title} · ${stamp}</p>
 <table>
 <thead><tr><th>מס׳</th><th>סטטוס</th><th>משימה</th><th>תאריך</th></tr></thead>
@@ -3754,17 +3837,27 @@ function wireGlobalHandlers() {
     const cloudSignOutBtn = document.getElementById("cloudSignOutBtn");
     const cloudBackupNowBtn = document.getElementById("cloudBackupNowBtn");
     const cloudRestoreBtn = document.getElementById("cloudRestoreBtn");
+    const pushNotifyEnableBtn = document.getElementById("pushNotifyEnableBtn");
+    const pushNotifyStatus = document.getElementById("pushNotifyStatus");
+    const setPushServerUrl = document.getElementById("setPushServerUrl");
+
+    const refreshPushNotifyPanel = () => {
+      if (pushNotifyStatus) pushNotifyStatus.textContent = pushStatusText();
+      if (setPushServerUrl) setPushServerUrl.value = settings.pushServerUrl || "";
+    };
 
     settingsBtn.addEventListener("click", () => {
       setDefaultCalMode.value = settings.defaultCalMode;
       if (cloudAutoBackupEl) cloudAutoBackupEl.checked = settings.cloudAutoBackup;
       refreshCloudBackupPanel();
+      refreshPushNotifyPanel();
       settingsDialog.showModal();
     });
 
     settingsSave.addEventListener("click", () => {
       settings.defaultCalMode = String(setDefaultCalMode.value ?? "week");
       settings.cloudAutoBackup = !!(cloudAutoBackupEl && cloudAutoBackupEl.checked);
+      settings.pushServerUrl = String(setPushServerUrl?.value ?? "").trim();
       saveSettings();
       ui.calMode = settings.defaultCalMode;
 
@@ -3840,6 +3933,29 @@ function wireGlobalHandlers() {
       } catch (e) {
         console.error(e);
         toast("שחזור נכשל. בדקי הרשאות וחיבור.");
+      }
+    });
+
+    pushNotifyEnableBtn?.addEventListener("click", async () => {
+      if (setPushServerUrl) settings.pushServerUrl = String(setPushServerUrl.value ?? "").trim();
+      saveSettings();
+      pushNotifyEnableBtn.disabled = true;
+      try {
+        await enableHourlyPush(settings);
+        await syncHourlyRemindersToServer(settings, hourlySchedule);
+        refreshPushNotifyPanel();
+        toast("התראות לו״ז הופעלו. בשעת ההתחלה תקבל תזכורת בטלפון.");
+      } catch (e) {
+        console.error(e);
+        const msg = String(e?.message || e);
+        if (msg === "denied") toast("ההרשאה נחסמה. אפשר לאשר בהגדרות הדפדפן/הטלפון.");
+        else if (msg === "unsupported") toast("המכשיר לא תומך בהתראות Push (באייפון: הוסיפי למסך הבית).");
+        else if (msg === "vapid_unavailable" || msg === "vapid_missing") {
+          toast("אין שרת תזכורות זמין. במחשב הריצי npm run dev. ב-Vercel בדקי Firebase ו־/api/vapidPublicKey.");
+        } else toast("הפעלת ההתראות נכשלה. בדקי חיבור ושרת התזכורות.");
+      } finally {
+        pushNotifyEnableBtn.disabled = false;
+        refreshPushNotifyPanel();
       }
     });
   }
@@ -3937,20 +4053,16 @@ function wireGlobalHandlers() {
   const bindAppMode = (id, mode) => {
     document.getElementById(id)?.addEventListener("click", () => setAppMode(mode));
   };
-  bindAppMode("tnDailyToday", "daily-today");
-  bindAppMode("tnIdeas", "ideas");
-  bindAppMode("tnDailyFuture", "daily-future");
-  bindAppMode("tnDailyHistory", "daily-history");
   bindAppMode("bnDailyToday", "daily-today");
-  bindAppMode("bnTodayTasks", "today-tasks");
+  bindAppMode("bnHourlySchedule", "hourly-schedule");
   bindAppMode("bnIdeas", "ideas");
   bindAppMode("topNavFuture", "daily-future");
   bindAppMode("topNavHistory", "daily-history");
   bindAppMode("topNavDailyMaster", "daily-master");
   bindAppMode("topNavTiming", "timing");
-  bindAppMode("topNavPantry", "pantry");
-  bindAppMode("topNavHourlySchedule", "hourly-schedule");
-  bindAppMode("topNavLunchPlanner", "lunch-planner");
+  document.getElementById("bnHome")?.addEventListener("click", () => setAppMode(homeTabToMode()));
+  document.getElementById("homeTabLunch")?.addEventListener("click", () => setHomeTab("lunch"));
+  document.getElementById("homeTabPantry")?.addEventListener("click", () => setHomeTab("pantry"));
 
   document.querySelectorAll(".lunch-tab").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -4789,6 +4901,7 @@ function render() {
   updateAppViewsVisibility();
   syncAppNavActive();
   document.body.classList.toggle("app-mode-ideas", appMode === "ideas");
+  document.body.classList.toggle("app-mode-home", appMode === "lunch-planner" || appMode === "pantry");
 
   if (appMode === "ideas") {
     ensureSelection();
@@ -4804,7 +4917,6 @@ function render() {
   }
 
   if (appMode === "daily-today") renderDailyTodayPage();
-  if (appMode === "today-tasks") renderTodayTasksPage();
   if (appMode === "daily-future") renderDailyFuturePage();
   if (appMode === "daily-history") renderDailyHistoryPage();
   if (appMode === "daily-master") renderDailyMasterPage();
@@ -4832,9 +4944,14 @@ async function boot() {
 
   setInterval(() => {
     if (localDateKey() !== lastKnownCalendarDayKey) render();
-  }, 60_000);
+    tickLocalHourlyReminders(hourlySchedule);
+  }, 20_000);
+  tickLocalHourlyReminders(hourlySchedule);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") render();
+    if (document.visibilityState === "visible") {
+      render();
+      tickLocalHourlyReminders(hourlySchedule);
+    }
   });
 
   persistAndRender();
