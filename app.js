@@ -5164,6 +5164,8 @@ async function boot() {
   persistAndRender();
   void syncHourlyRemindersToDevice(hourlySchedule);
 }
+
+boot().catch((err) => {
   console.error(err);
   ensureSelection();
   wireGlobalHandlers();
