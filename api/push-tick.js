@@ -25,8 +25,8 @@ export default async function handler(req, res) {
             payload,
           );
           any = true;
-        } catch {
-          /* ignore single endpoint */
+        } catch (err) {
+          console.warn("push send failed", String(err?.message || err));
         }
       }
       if (any) {

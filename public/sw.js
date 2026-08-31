@@ -1,4 +1,4 @@
-const CACHE = "idea-planner-cache-v13";
+const CACHE = "idea-planner-cache-v14";
 
 /** קבצים שקיימים תמיד אחרי build — בלי נתיבי hashed שלא ייכשלו ב־addAll */
 const PRECACHE = [
@@ -96,4 +96,136 @@ self.addEventListener("notificationclick", (event) => {
       return self.clients.openWindow(url);
     }),
   );
+});
+
+const HOURLY_IDB = "idea-planner-hourly-v1";
+const HOURLY_DIGEST_MIN = 10 * 60;
+
+function hourlyIdbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HOURLY_IDB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv");
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function hourlyIdbGet(key) {
+  return hourlyIdbOpen().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const tx = db.transaction("kv", "readonly");
+        const r = tx.objectStore("kv").get(key);
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      }),
+  );
+}
+
+function hourlyIdbSet(key, value) {
+  return hourlyIdbOpen().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const tx = db.transaction("kv", "readwrite");
+        tx.objectStore("kv").put(value, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      }),
+  );
+}
+
+function localDateKeySw(d) {
+  const x = d || new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}`;
+}
+
+function fireAtMs(dateKey, startMin) {
+  if (!Number.isFinite(Number(startMin))) return null;
+  const [y, m, d] = String(dateKey).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const dt = new Date(y, m - 1, d, 0, 0, 0, 0);
+  dt.setMinutes(Number(startMin) || 0);
+  const t = dt.getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+function pad2sw(n) {
+  return String(n).padStart(2, "0");
+}
+
+function minutesLabel(totalMin) {
+  const m = Math.max(0, Math.min(24 * 60 - 1, Math.round(Number(totalMin) || 0)));
+  return `${pad2sw(Math.floor(m / 60))}:${pad2sw(m % 60)}`;
+}
+
+async function tickHourlyFromIdb() {
+  const schedule = await hourlyIdbGet("schedule");
+  if (!schedule || typeof schedule !== "object") return;
+  const now = Date.now();
+  const today = localDateKeySw(new Date());
+  let fired = (await hourlyIdbGet("fired")) || {};
+  if (typeof fired !== "object") fired = {};
+  let changed = false;
+
+  const days = schedule.days && typeof schedule.days === "object" ? schedule.days : {};
+  const digestTitles = [];
+
+  for (const blk of days[today]?.blocks || []) {
+    if (!blk || blk.done) continue;
+    const title = String(blk.title || "").trim() || "משימה";
+    const hasTime = Number.isFinite(blk.startMin);
+    if (hasTime) {
+      const fireAt = fireAtMs(today, blk.startMin);
+      if (fireAt == null || now < fireAt) continue;
+      const key = `hourly:${today}:${blk.id}:${blk.startMin}`;
+      if (fired[key]) continue;
+      fired[key] = now;
+      changed = true;
+      const late = now - fireAt > 2 * 60 * 1000;
+      const when = minutesLabel(blk.startMin);
+      await self.registration.showNotification(late ? "תזכורת מלו״ז (פיגור)" : "תזכורת מלו״ז", {
+        body: late ? `פג הזמן: ${title} · ${when}` : `עכשיו: ${title} (${when})`,
+        tag: key,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        data: { url: "/" },
+      });
+      continue;
+    }
+    digestTitles.push(title);
+  }
+
+  const digestAt = fireAtMs(today, HOURLY_DIGEST_MIN);
+  if (digestTitles.length && digestAt != null && now >= digestAt) {
+    const key = `hourly:digest:${today}`;
+    if (!fired[key]) {
+      fired[key] = now;
+      changed = true;
+      const body = digestTitles.join(" · ").slice(0, 220);
+      await self.registration.showNotification("הלו״ז להיום", {
+        body,
+        tag: key,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        data: { url: "/" },
+      });
+    }
+  }
+
+  if (changed) await hourlyIdbSet("fired", fired);
+}
+
+self.addEventListener("periodicsync", (event) => {
+  if (event.tag === "hourly-reminders") event.waitUntil(tickHourlyFromIdb());
+});
+
+self.addEventListener("message", (event) => {
+  const type = event.data?.type;
+  if (type === "hourly-tick" || type === "hourly-sync") {
+    event.waitUntil(tickHourlyFromIdb());
+  }
 });

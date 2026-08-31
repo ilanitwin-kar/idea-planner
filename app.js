@@ -66,6 +66,7 @@ import {
   notificationPermission,
   pushStatusText,
   iosNeedsHomeScreenForPush,
+  syncHourlyRemindersToDevice,
 } from "./push-client.js";
 import {
   LUNCH_PLANNER_STORAGE_KEY,
@@ -537,6 +538,7 @@ function persistHourlySchedule() {
   saveHourlySchedule(hourlySchedule);
   scheduleCloudBackupIfEnabled();
   scheduleHourlyPushSync();
+  void syncHourlyRemindersToDevice(hourlySchedule);
 }
 
 async function runEnableHourlyPushFromClick() {
@@ -555,7 +557,13 @@ async function runEnableHourlyPushFromClick() {
     }
     const statusEl = document.getElementById("pushNotifyStatus");
     if (statusEl) statusEl.textContent = pushStatusText();
-    toast("התראות אושרו. כשהאפליקציה פתוחה או ברקע תקבל תזכורת בלו״ז.");
+    toast(
+      result?.localOnly
+        ? "התראות אושרו במכשיר. כשהאפליקציה פתוחה זה עובד; השמירה לשרת לא הצליחה."
+        : "התראות לו״ז פעילות גם כשהאפליקציה סגורה — כמו תזכורת ביומן.",
+    );
+    void syncHourlyRemindersToDevice(hourlySchedule);
+    tickLocalHourlyReminders(hourlySchedule);
     render();
   } catch (e) {
     console.error(e);
@@ -566,7 +574,9 @@ async function runEnableHourlyPushFromClick() {
       toast("באייפון זה לא נפתח מספארי. שתף → הוספה למסך הבית, ואז לפתוח מהאייקון וללחוץ שוב.");
     } else if (msg === "denied") toast("ההרשאה נחסמה. אפשר לאשר בהגדרות הדפדפן/הטלפון.");
     else if (msg === "unsupported") toast("המכשיר לא תומך בהתראות Push (באייפון: הוסיפי למסך הבית).");
-    else if (msg === "vapid_unavailable" || msg === "vapid_missing") {
+    else if (msg === "subscribe_failed") {
+      toast("ההרשאה אושרה, אבל השרת לא שמר את המכשיר. נסי שוב אחרי פרסום כללי Firestore.");
+    } else if (msg === "vapid_unavailable" || msg === "vapid_missing") {
       toast("עדיין אין חיבור לשרת התזכורות באתר. אחרי עדכון האתר נסי שוב «הפעלת התראות».");
     } else toast("הפעלת ההתראות נכשלה. בדקי חיבור ושרת התזכורות.");
     render();
@@ -5152,9 +5162,8 @@ async function boot() {
   });
 
   persistAndRender();
+  void syncHourlyRemindersToDevice(hourlySchedule);
 }
-
-boot().catch((err) => {
   console.error(err);
   ensureSelection();
   wireGlobalHandlers();

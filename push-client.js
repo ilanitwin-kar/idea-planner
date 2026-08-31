@@ -11,6 +11,7 @@ import {
 
 const USER_KEY_LS = "idea-planner:push-user-key:v1";
 const FIRED_LS = "idea-planner:hourly-local-fired:v1";
+const HOURLY_IDB = "idea-planner-hourly-v1";
 
 export function getPushUserKey() {
   try {
@@ -167,9 +168,10 @@ export async function enableHourlyPush(settings) {
         subscription: sub.toJSON(),
       }),
     });
-    if (!r.ok) return { ok: true, localOnly: true };
+    if (!r.ok) throw new Error("subscribe_failed");
     return { ok: true, localOnly: false };
-  } catch {
+  } catch (e) {
+    if (String(e?.message || e) === "subscribe_failed") throw e;
     return { ok: true, localOnly: true };
   }
 }
@@ -218,7 +220,58 @@ function pruneFiredMap(map) {
   return next;
 }
 
-function showLocalHourlyNotification(tag, title, body) {
+function hourlyIdbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HOURLY_IDB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv");
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function hourlyIdbSet(key, value) {
+  return hourlyIdbOpen().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const tx = db.transaction("kv", "readwrite");
+        tx.objectStore("kv").put(value, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      }),
+  );
+}
+
+function hourlyIdbGet(key) {
+  return hourlyIdbOpen().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const tx = db.transaction("kv", "readonly");
+        const r = tx.objectStore("kv").get(key);
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      }),
+  );
+}
+
+async function showLocalHourlyNotification(tag, title, body) {
+  try {
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification(title, {
+        body,
+        tag,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        data: { url: "/" },
+      });
+      return;
+    }
+  } catch {
+    /* fallback below */
+  }
   try {
     const n = new Notification(title, {
       body,
@@ -237,44 +290,105 @@ function showLocalHourlyNotification(tag, title, body) {
   }
 }
 
-/** התראה מקומית — בשעת משימה, וב־10:00 סיכום של מה שבלי שעה */
+function localDateKeyNow() {
+  const x = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}`;
+}
+
+/**
+ * תזכורת בשעה שנקבעה, וב־10:00 סיכום של מה שבלי שעה.
+ * אם פיספסנו את הרגע (האפליקציה הייתה סגורה) — קופץ ברגע שנפתחת, כל עוד זה אותו יום.
+ */
 export function tickLocalHourlyReminders(schedule) {
+  void tickLocalHourlyRemindersAsync(schedule);
+}
+
+async function tickLocalHourlyRemindersAsync(schedule) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   const now = Date.now();
+  const today = localDateKeyNow();
   let fired = pruneFiredMap(loadFiredMap());
+  try {
+    const fromIdb = await hourlyIdbGet("fired");
+    if (fromIdb && typeof fromIdb === "object") fired = { ...fromIdb, ...fired };
+  } catch {
+    /* ignore */
+  }
   let changed = false;
-  const digestTitles = new Map();
+  const digestTitles = [];
+
   for (const { dateKey, block: blk } of collectAllScheduleBlocks(schedule)) {
-    if (blk.done) continue;
+    if (dateKey !== today || blk.done) continue;
     const title = String(blk.title ?? "").trim() || "משימה";
     if (blockHasTime(blk)) {
       const fireAt = hourlyBlockFireAtMs(dateKey, blk.startMin);
-      if (fireAt == null) continue;
-      if (now < fireAt || now > fireAt + 90_000) continue;
+      if (fireAt == null || now < fireAt) continue;
       const key = `hourly:${dateKey}:${blk.id}:${blk.startMin}`;
       if (fired[key]) continue;
       fired[key] = now;
       changed = true;
       const startLabel = minutesToTimeString(blk.startMin);
-      showLocalHourlyNotification(key, "תזכורת מלו״ז", `עכשיו: ${title} (${startLabel})`);
+      const late = now - fireAt > 2 * 60 * 1000;
+      await showLocalHourlyNotification(
+        key,
+        late ? "תזכורת מלו״ז (פיגור)" : "תזכורת מלו״ז",
+        late ? `פג הזמן: ${title} · ${startLabel}` : `עכשיו: ${title} (${startLabel})`,
+      );
       continue;
     }
-    if (!digestTitles.has(dateKey)) digestTitles.set(dateKey, []);
-    digestTitles.get(dateKey).push(title);
+    digestTitles.push(title);
   }
-  for (const [dateKey, titles] of digestTitles) {
-    const fireAt = hourlyBlockFireAtMs(dateKey, HOURLY_DIGEST_MIN);
-    if (fireAt == null) continue;
-    if (now < fireAt || now > fireAt + 90_000) continue;
-    const key = `hourly:digest:${dateKey}`;
-    if (fired[key]) continue;
-    const body = digestBodyForDay(titles);
-    if (!body) continue;
-    fired[key] = now;
-    changed = true;
-    showLocalHourlyNotification(key, "הלו״ז להיום", body);
+
+  const digestAt = hourlyBlockFireAtMs(today, HOURLY_DIGEST_MIN);
+  if (digestTitles.length && digestAt != null && now >= digestAt) {
+    const key = `hourly:digest:${today}`;
+    if (!fired[key]) {
+      fired[key] = now;
+      changed = true;
+      const body = digestBodyForDay(digestTitles);
+      if (body) await showLocalHourlyNotification(key, "הלו״ז להיום", body);
+    }
   }
-  if (changed) saveFiredMap(fired);
+
+  if (changed) {
+    saveFiredMap(fired);
+    try {
+      await hourlyIdbSet("fired", fired);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** שומר את הלו״ז למכשיר כדי שה־service worker יוכל להזכיר גם כשהמסך כבוי לזמן קצר */
+export async function syncHourlyRemindersToDevice(schedule) {
+  if (notificationPermission() !== "granted") return;
+  try {
+    await hourlyIdbSet("schedule", schedule);
+    try {
+      const fromIdb = await hourlyIdbGet("fired");
+      const merged = pruneFiredMap({
+        ...(fromIdb && typeof fromIdb === "object" ? fromIdb : {}),
+        ...loadFiredMap(),
+      });
+      await hourlyIdbSet("fired", merged);
+    } catch {
+      /* ignore */
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    const reg = await navigator.serviceWorker.ready;
+    reg.active?.postMessage({ type: "hourly-sync" });
+    if (reg.periodicSync) {
+      await reg.periodicSync.register("hourly-reminders", { minInterval: 15 * 60 * 1000 });
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 export function pushStatusText() {
