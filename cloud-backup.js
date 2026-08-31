@@ -233,6 +233,84 @@ export function getCloudUser() {
   return authRef?.currentUser ?? null;
 }
 
+const PUSH_FIRESTORE_RULES = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /ideaPlannerPush/{docId} {
+      allow read, write: if true;
+    }
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+`;
+
+/**
+ * מפרסם את כללי Firestore לתור התזכורות — עם חשבון Google שמנהל את פרויקט Firebase.
+ * נדרש כדי ש-Vercel יוכל לשמור מנויים ולשלוח התראות כשהאפליקציה סגורה.
+ */
+export async function publishPushFirestoreRules() {
+  await loadFirebaseConfigIfNeeded();
+  const r = initCloudBackup();
+  if (!r.ok) throw new Error("firebase_not_ready");
+  const cfg = readFirebaseConfigFromEnv();
+  const projectId = String(cfg?.projectId || "idea-planner-ilanit").trim();
+  const provider = new GoogleAuthProvider();
+  provider.addScope("https://www.googleapis.com/auth/cloud-platform");
+  const result = await signInWithPopup(authRef, provider);
+  const cred = GoogleAuthProvider.credentialFromResult(result);
+  const accessToken = String(cred?.accessToken || "").trim();
+  if (!accessToken) throw new Error("no_google_access_token");
+
+  const create = await fetch(`https://firebaserules.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/rulesets`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      source: {
+        files: [{ name: "firestore.rules", content: PUSH_FIRESTORE_RULES }],
+      },
+    }),
+  });
+  const createdText = await create.text();
+  if (!create.ok) throw new Error(`ruleset_${create.status}`);
+  let created;
+  try {
+    created = JSON.parse(createdText);
+  } catch {
+    throw new Error("ruleset_parse");
+  }
+  const rulesetName = String(created?.name || "").trim();
+  if (!rulesetName) throw new Error("ruleset_name_missing");
+
+  const relName = `projects/${projectId}/releases/cloud.firestore`;
+  const relBody = JSON.stringify({ name: relName, rulesetName });
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": "application/json",
+  };
+  let rel = await fetch(
+    `https://firebaserules.googleapis.com/v1/${relName}?updateMask=rulesetName`,
+    {
+      method: "PATCH",
+      headers,
+      body: relBody,
+    },
+  );
+  if (!rel.ok) {
+    rel = await fetch(`https://firebaserules.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/releases`, {
+      method: "POST",
+      headers,
+      body: relBody,
+    });
+  }
+  if (!rel.ok) throw new Error(`release_${rel.status}`);
+  return { ok: true, rulesetName };
+}
+
 /** @param {(user: import("firebase/auth").User | null) => void} callback */
 export function onCloudAuthChanged(callback) {
   initCloudBackup();

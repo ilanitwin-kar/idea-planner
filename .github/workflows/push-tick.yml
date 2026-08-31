@@ -1,0 +1,14 @@
+name: hourly-push-tick
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Wake reminder queue
+        run: curl -fsS -X GET "https://idea-planner-ten.vercel.app/api/push-tick"
