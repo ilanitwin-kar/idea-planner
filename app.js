@@ -29,7 +29,6 @@ import {
   signInCloudWithGoogle,
   signOutCloud,
   getCloudUser,
-  publishPushFirestoreRules,
 } from "./cloud-backup.js";
 import {
   PANTRY_STORAGE_KEY,
@@ -548,31 +547,15 @@ async function runEnableHourlyPushFromClick() {
   saveSettings();
   try {
     const result = await enableHourlyPush(settings);
-    let final = result;
-    if (result?.localOnly) {
-      toast("מאשרת ב-Firebase שמירת תזכורות כשהאפליקציה סגורה… ייפתח חלון Google.");
-      try {
-        await publishPushFirestoreRules();
-        final = await enableHourlyPush(settings);
-      } catch (pubErr) {
-        console.warn("publish firestore rules", pubErr);
-        toast("צריך לאשר ב-Google את ניהול הפרויקט, או לפרסם ידנית ב-Firebase → Firestore → Rules את הכלל ideaPlannerPush.");
-        final = result;
-      }
-    }
     try {
       await syncHourlyRemindersToServer(settings, hourlySchedule);
     } catch (syncErr) {
-      if (!final?.localOnly) throw syncErr;
+      if (!result?.localOnly) throw syncErr;
       console.warn("hourly push sync", syncErr);
     }
     const statusEl = document.getElementById("pushNotifyStatus");
     if (statusEl) statusEl.textContent = pushStatusText();
-    if (final?.localOnly) {
-      toast("התראות אושרו במכשיר. כשהאפליקציה פתוחה זה עובד. לסגורה לגמרי — היכנסי לחשבון Google של Firebase ולחצי שוב «הפעלת התראות».");
-    } else {
-      toast("התראות לו״ז הופעלו גם כשהאפליקציה סגורה.");
-    }
+    toast("התראות אושרו. כשהאפליקציה פתוחה או ברקע תקבל תזכורת בלו״ז.");
     render();
   } catch (e) {
     console.error(e);
