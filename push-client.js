@@ -149,24 +149,29 @@ export async function enableHourlyPush(settings) {
   if (!canPush) return { ok: true, localOnly: true };
 
   const vapid = await fetchVapidPublicKey(settings);
-  let sub = await reg.pushManager.getSubscription();
+  let sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(vapid),
+  }).catch(() => null);
   if (!sub) {
-    sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(vapid),
-    });
+    sub = await reg.pushManager.getSubscription();
   }
+  if (!sub) return { ok: true, localOnly: true };
 
-  const r = await fetch(apiUrl(settings, "/api/subscribe"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userKey: getPushUserKey(),
-      subscription: sub.toJSON(),
-    }),
-  });
-  if (!r.ok) throw new Error("subscribe_failed");
-  return { ok: true, localOnly: false };
+  try {
+    const r = await fetch(apiUrl(settings, "/api/subscribe"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userKey: getPushUserKey(),
+        subscription: sub.toJSON(),
+      }),
+    });
+    if (!r.ok) return { ok: true, localOnly: true };
+    return { ok: true, localOnly: false };
+  } catch {
+    return { ok: true, localOnly: true };
+  }
 }
 
 export async function syncHourlyRemindersToServer(settings, schedule) {

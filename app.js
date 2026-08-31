@@ -556,7 +556,7 @@ async function runEnableHourlyPushFromClick() {
     const statusEl = document.getElementById("pushNotifyStatus");
     if (statusEl) statusEl.textContent = pushStatusText();
     if (result?.localOnly) {
-      toast("אושר במכשיר. כדי לקבל התראה גם כשהאפליקציה סגורה — באייפון פתחי מהאייקון במסך הבית.");
+      toast("התראות אושרו במכשיר. כשהאפליקציה פתוחה או ברקע — תקבל תזכורת. אם סגרת לגמרי, זה דורש שמירה ב-Firebase (כלל ideaPlannerPush).");
     } else {
       toast("התראות לו״ז הופעלו: בשעה שסימנת, וב־10:00 סיכום של מה שבלי שעה.");
     }
@@ -571,7 +571,7 @@ async function runEnableHourlyPushFromClick() {
     } else if (msg === "denied") toast("ההרשאה נחסמה. אפשר לאשר בהגדרות הדפדפן/הטלפון.");
     else if (msg === "unsupported") toast("המכשיר לא תומך בהתראות Push (באייפון: הוסיפי למסך הבית).");
     else if (msg === "vapid_unavailable" || msg === "vapid_missing") {
-      toast("אין שרת תזכורות זמין. במחשב הריצי npm run dev. ב-Vercel בדקי Firebase ו־/api/vapidPublicKey.");
+      toast("עדיין אין חיבור לשרת התזכורות באתר. אחרי עדכון האתר נסי שוב «הפעלת התראות».");
     } else toast("הפעלת ההתראות נכשלה. בדקי חיבור ושרת התזכורות.");
     render();
   }
