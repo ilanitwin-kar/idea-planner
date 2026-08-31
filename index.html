@@ -122,7 +122,7 @@
         </div>
         <div class="section">
           <div class="section-title">תזכורות לו״ז</div>
-          <p class="dialog-hint">משימה עם שעה — התראה באותו רגע. בלי שעה — ב־10:00 בבוקר כל הרשימה של אותו יום.</p>
+          <p class="dialog-hint">משימה עם שעה — התראה באותו רגע. בלי שעה — ב־10:00 בבוקר כל הרשימה של אותו יום. באייפון צריך לפתוח מהאייקון במסך הבית, אחרת לא יופיע אישור.</p>
           <p id="pushNotifyStatus" class="dialog-text dialog-text--tight">—</p>
           <label class="checkline">כתובת שרת תזכורות (אופציונלי)
             <input id="setPushServerUrl" class="input" type="url" placeholder="ריק = אותו אתר" autocomplete="off" />
@@ -544,6 +544,11 @@
             <p class="hourly-add-hint">בלי שעה — תזכורת ב־10:00 עם כל הרשימה. עם שעה — תזכורת באותו רגע.</p>
             <button class="btn" type="submit">הוספה</button>
           </form>
+
+          <div id="hourlyPushBanner" class="hourly-push-banner">
+            <p id="hourlyPushBannerHint" class="hourly-push-banner-hint"></p>
+            <button id="hourlyPushEnableBtn" class="btn" type="button">הפעלת התראות</button>
+          </div>
 
           <div id="hourlyScheduleList" class="hourly-task-list" aria-label="משימות הלו״ז"></div>
           <div id="hourlyScheduleProgress" class="daily-progress"></div>

@@ -1595,7 +1595,7 @@ body.app-mode-home .top-menu-dialog{
   position: fixed;
   left: 18px;
   bottom: 18px;
-  z-index: 50;
+  z-index: 10000;
   max-width: min(520px, calc(100vw - 36px));
   padding: 12px 14px;
   border-radius: 14px;
@@ -2150,6 +2150,25 @@ body.app-mode-home .top-menu-dialog{
   font-size: 0.8rem;
   color: var(--muted);
   line-height: 1.35;
+}
+.hourly-push-banner{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(196, 30, 58, 0.28);
+  background: var(--accent-pink-soft);
+}
+.hourly-push-banner.hidden{ display: none; }
+.hourly-push-banner-hint{
+  flex: 1 1 180px;
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--heading);
 }
 .hourly-has-time{
   margin: 0;

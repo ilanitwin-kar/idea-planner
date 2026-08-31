@@ -65,6 +65,7 @@ import {
   tickLocalHourlyReminders,
   notificationPermission,
   pushStatusText,
+  iosNeedsHomeScreenForPush,
 } from "./push-client.js";
 import {
   LUNCH_PLANNER_STORAGE_KEY,
@@ -536,6 +537,44 @@ function persistHourlySchedule() {
   saveHourlySchedule(hourlySchedule);
   scheduleCloudBackupIfEnabled();
   scheduleHourlyPushSync();
+}
+
+async function runEnableHourlyPushFromClick() {
+  document.getElementById("settingsDialog")?.close?.();
+  document.getElementById("topMenuDialog")?.close?.();
+  const urlEl = document.getElementById("setPushServerUrl");
+  if (urlEl) settings.pushServerUrl = String(urlEl.value ?? "").trim();
+  saveSettings();
+  try {
+    const result = await enableHourlyPush(settings);
+    try {
+      await syncHourlyRemindersToServer(settings, hourlySchedule);
+    } catch (syncErr) {
+      if (!result?.localOnly) throw syncErr;
+      console.warn("hourly push sync", syncErr);
+    }
+    const statusEl = document.getElementById("pushNotifyStatus");
+    if (statusEl) statusEl.textContent = pushStatusText();
+    if (result?.localOnly) {
+      toast("אושר במכשיר. כדי לקבל התראה גם כשהאפליקציה סגורה — באייפון פתחי מהאייקון במסך הבית.");
+    } else {
+      toast("התראות לו״ז הופעלו: בשעה שסימנת, וב־10:00 סיכום של מה שבלי שעה.");
+    }
+    render();
+  } catch (e) {
+    console.error(e);
+    const msg = String(e?.message || e);
+    const statusEl = document.getElementById("pushNotifyStatus");
+    if (statusEl) statusEl.textContent = pushStatusText();
+    if (msg === "ios_homescreen") {
+      toast("באייפון זה לא נפתח מספארי. שתף → הוספה למסך הבית, ואז לפתוח מהאייקון וללחוץ שוב.");
+    } else if (msg === "denied") toast("ההרשאה נחסמה. אפשר לאשר בהגדרות הדפדפן/הטלפון.");
+    else if (msg === "unsupported") toast("המכשיר לא תומך בהתראות Push (באייפון: הוסיפי למסך הבית).");
+    else if (msg === "vapid_unavailable" || msg === "vapid_missing") {
+      toast("אין שרת תזכורות זמין. במחשב הריצי npm run dev. ב-Vercel בדקי Firebase ו־/api/vapidPublicKey.");
+    } else toast("הפעלת ההתראות נכשלה. בדקי חיבור ושרת התזכורות.");
+    render();
+  }
 }
 
 let lunchPlanner = loadLunchPlanner();
@@ -1455,6 +1494,18 @@ function renderHourlySchedulePage() {
     else progEl.textContent = `${pr.done}/${pr.total} משימות בלו״ז`;
     if (notificationPermission() === "granted") {
       progEl.textContent += " · התראות פעילות";
+    }
+  }
+
+  const banner = document.getElementById("hourlyPushBanner");
+  if (banner) {
+    const granted = notificationPermission() === "granted";
+    banner.classList.toggle("hidden", granted);
+    const hint = document.getElementById("hourlyPushBannerHint");
+    if (hint) {
+      hint.textContent = iosNeedsHomeScreenForPush()
+        ? "באייפון: קודם שתף → הוספה למסך הבית, ואז לפתוח מהאייקון. אחר כך לחצי כאן לאישור."
+        : "כדי לקבל תזכורת שקופצת מלמעלה — לחצי לאישור במכשיר.";
     }
   }
 }
@@ -4032,27 +4083,10 @@ function wireGlobalHandlers() {
       }
     });
 
-    pushNotifyEnableBtn?.addEventListener("click", async () => {
-      if (setPushServerUrl) settings.pushServerUrl = String(setPushServerUrl.value ?? "").trim();
-      saveSettings();
-      pushNotifyEnableBtn.disabled = true;
-      try {
-        await enableHourlyPush(settings);
-        await syncHourlyRemindersToServer(settings, hourlySchedule);
-        refreshPushNotifyPanel();
-        toast("התראות לו״ז הופעלו: בשעה שסימנת, וב־10:00 סיכום של מה שבלי שעה.");
-      } catch (e) {
-        console.error(e);
-        const msg = String(e?.message || e);
-        if (msg === "denied") toast("ההרשאה נחסמה. אפשר לאשר בהגדרות הדפדפן/הטלפון.");
-        else if (msg === "unsupported") toast("המכשיר לא תומך בהתראות Push (באייפון: הוסיפי למסך הבית).");
-        else if (msg === "vapid_unavailable" || msg === "vapid_missing") {
-          toast("אין שרת תזכורות זמין. במחשב הריצי npm run dev. ב-Vercel בדקי Firebase ו־/api/vapidPublicKey.");
-        } else toast("הפעלת ההתראות נכשלה. בדקי חיבור ושרת התזכורות.");
-      } finally {
-        pushNotifyEnableBtn.disabled = false;
-        refreshPushNotifyPanel();
-      }
+    pushNotifyEnableBtn?.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void runEnableHourlyPushFromClick();
     });
   }
 
@@ -4374,6 +4408,10 @@ function wireGlobalHandlers() {
   });
 
   initHourlyTimeSelects();
+  document.getElementById("hourlyPushEnableBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    void runEnableHourlyPushFromClick();
+  });
   document.getElementById("hourlyAddHasTime")?.addEventListener("change", () => {
     syncHourlyTimeRow("hourlyAddHasTime", "hourlyAddTimeRow", "hourlyScheduleStart");
   });

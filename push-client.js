@@ -111,14 +111,43 @@ export function notificationPermission() {
   return Notification.permission;
 }
 
-export async function enableHourlyPush(settings) {
-  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
-    throw new Error("unsupported");
+export function isIosDevice() {
+  const ua = navigator.userAgent || "";
+  if (/iPad|iPhone|iPod/i.test(ua)) return true;
+  return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+}
+
+export function isStandaloneDisplay() {
+  try {
+    if (window.matchMedia?.("(display-mode: standalone)")?.matches) return true;
+  } catch {
+    /* ignore */
   }
-  const perm = await Notification.requestPermission();
+  return !!window.navigator.standalone;
+}
+
+/** באייפון אישור Push מופיע רק באפליקציה ממסך הבית — לא בלשונית ספארי. */
+export function iosNeedsHomeScreenForPush() {
+  return isIosDevice() && !isStandaloneDisplay();
+}
+
+export async function enableHourlyPush(settings) {
+  if (!("Notification" in window)) throw new Error("unsupported");
+  if (iosNeedsHomeScreenForPush()) throw new Error("ios_homescreen");
+
+  // חייבים לקרוא לזה מיד אחרי לחיצה — בלי await לפני, ובלי חלון dialog פתוח.
+  let perm = Notification.permission;
+  if (perm !== "granted") {
+    perm = await Notification.requestPermission();
+  }
   if (perm !== "granted") throw new Error("denied");
 
+  if (!("serviceWorker" in navigator)) throw new Error("unsupported");
+
   const reg = await ensurePushServiceWorker();
+  const canPush = "PushManager" in window && !!reg.pushManager;
+  if (!canPush) return { ok: true, localOnly: true };
+
   const vapid = await fetchVapidPublicKey(settings);
   let sub = await reg.pushManager.getSubscription();
   if (!sub) {
@@ -137,7 +166,7 @@ export async function enableHourlyPush(settings) {
     }),
   });
   if (!r.ok) throw new Error("subscribe_failed");
-  return { ok: true };
+  return { ok: true, localOnly: false };
 }
 
 export async function syncHourlyRemindersToServer(settings, schedule) {
@@ -245,8 +274,11 @@ export function tickLocalHourlyReminders(schedule) {
 
 export function pushStatusText() {
   if (!("Notification" in window)) return "הדפדפן לא תומך בהתראות.";
+  if (iosNeedsHomeScreenForPush()) {
+    return "באייפון: שתף → הוספה למסך הבית, ואז לפתוח מהאייקון. רק אז יופיע אישור התראות.";
+  }
   const p = Notification.permission;
   if (p === "granted") return "התראות מאושרות במכשיר.";
   if (p === "denied") return "התראות נחסמו במכשיר — אפשר לשנות בהגדרות הדפדפן.";
-  return "עדיין לא אושרו התראות.";
+  return "עדיין לא אושרו התראות. לחצי «הפעלת התראות» — ייסגר החלון ויופיע אישור.";
 }
