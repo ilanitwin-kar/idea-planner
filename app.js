@@ -31,6 +31,13 @@ import {
   formatMinutesShort,
   findOpenSession,
   sessionElapsedMs,
+  addManualTimingEntry,
+  CLEAN_GROUP_ID,
+  wallItemId,
+  findWall,
+  wallElapsedMs,
+  startWallTimer,
+  stopWallTimer,
 } from "./daily-timing-log.js";
 import {
   isCloudBackupConfigured,
@@ -2396,10 +2403,15 @@ function updateDailyTimerClock() {
     const sess = id ? findOpenSession(timingState, id) : timingState.active;
     node.textContent = sess ? sessionClockText(sess) : "0:00";
   });
+  document.querySelectorAll("[data-timing-wall]").forEach((node) => {
+    const gid = node.getAttribute("data-timing-wall");
+    const wall = gid ? findWall(timingState, gid) : null;
+    node.textContent = wall ? formatElapsedMs(wallElapsedMs(wall)) : "0:00";
+  });
 }
 
 function ensureDailyTimerTick() {
-  if (timingState.active) {
+  if (timingState.active || (timingState.walls ?? []).length) {
     startDailyTimerTick();
     return;
   }
@@ -2483,6 +2495,17 @@ function formatTimingStatsLine(st) {
   return `ממוצע ${formatMinutesShort(st.avgMinutes)} דק׳ · ${st.count} פעמים · אחרון ${formatMinutesShort(st.lastMinutes)} דק׳${lastDay}`;
 }
 
+function timingManualRowHtml(choreId, subId) {
+  const cid = escapeHtml(choreId);
+  const sid = escapeHtml(subId || "");
+  return `
+    <div class="timing-manual-row">
+      <input class="input timing-manual-mins" type="number" min="0.1" step="0.1" inputmode="decimal" placeholder="דק׳ מהמכשיר האחר" aria-label="דקות לרישום ידני" data-timing-manual-mins />
+      <button type="button" class="btn btn-ghost" data-action="chore-manual" data-chore-id="${cid}" data-sub-id="${sid}">רישום ידני</button>
+    </div>
+  `;
+}
+
 function timingRunButtons(choreId, subId, itemId) {
   const running = timingState.active?.itemId === itemId;
   const paused = !running && !!(timingState.paused ?? []).some((s) => s.itemId === itemId);
@@ -2513,70 +2536,61 @@ function timingRunButtons(choreId, subId, itemId) {
   `;
 }
 
-function renderDailyTimingPage() {
-  const catalog = document.getElementById("dailyTimingCatalog");
-  const history = document.getElementById("dailyTimingList");
-  if (!catalog || !history) return;
-  catalog.innerHTML = "";
-  history.innerHTML = "";
+function createTimingChoreCard(chore) {
+  const card = document.createElement("article");
+  card.className = "timing-chore";
+  card.setAttribute("role", "listitem");
+  const subs = chore.subs ?? [];
+  const hasSubs = subs.length > 0;
+  const parentId = choreItemId(chore.id);
+  const est = estimatedParentMinutes(timingState, chore);
+  const totalLine = hasSubs
+    ? est.avgMinutes != null
+      ? `בערך ${formatMinutesShort(est.avgMinutes)} דק׳ לכל המשימה (סכום ממוצעי השלבים)`
+      : "מדדי כל שלב — כאן יופיע כמה זמן לוקח בערך הכל ביחד"
+    : formatTimingStatsLine(statsForItem(timingState, parentId));
 
-  const chores = timingState.chores ?? [];
-  if (!chores.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty timing-empty-hint";
-    empty.textContent = "אין משימות בקטלוג — הוסיפי למעלה.";
-    catalog.appendChild(empty);
-  }
-
-  for (const chore of chores) {
-    const card = document.createElement("article");
-    card.className = "timing-chore";
-    card.setAttribute("role", "listitem");
-    const subs = chore.subs ?? [];
-    const hasSubs = subs.length > 0;
-    const parentId = choreItemId(chore.id);
-    const est = estimatedParentMinutes(timingState, chore);
-    const totalLine = hasSubs
-      ? est.avgMinutes != null
-        ? `בערך ${formatMinutesShort(est.avgMinutes)} דק׳ לכל המשימה (סכום ממוצעי השלבים)`
-        : "מדדי כל שלב — כאן יופיע כמה זמן לוקח בערך הכל ביחד"
-      : formatTimingStatsLine(statsForItem(timingState, parentId));
-
-    let body = "";
-    if (hasSubs) {
-      body = subs
-        .map((s) => {
-          const iid = choreItemId(chore.id, s.id);
-          const st = statsForItem(timingState, iid);
-          const running = timingState.active?.itemId === iid;
-          const paused = !running && !!(timingState.paused ?? []).some((p) => p.itemId === iid);
-          return `
+  let body = "";
+  if (hasSubs) {
+    body = subs
+      .map((s) => {
+        const iid = choreItemId(chore.id, s.id);
+        const st = statsForItem(timingState, iid);
+        const running = timingState.active?.itemId === iid;
+        const paused = !running && !!(timingState.paused ?? []).some((p) => p.itemId === iid);
+        return `
             <div class="timing-sub${running ? " timing-sub--running" : ""}${paused ? " timing-sub--paused" : ""}">
-              <div class="timing-sub-main">
-                <div class="timing-sub-title">${escapeHtml(s.title)}</div>
-                <div class="timing-sub-stats">${escapeHtml(formatTimingStatsLine(st))}</div>
+              <div class="timing-sub-top">
+                <div class="timing-sub-main">
+                  <div class="timing-sub-title">${escapeHtml(s.title)}</div>
+                  <div class="timing-sub-stats">${escapeHtml(formatTimingStatsLine(st))}</div>
+                </div>
+                <div class="timing-sub-actions">
+                  ${timingRunButtons(chore.id, s.id, iid)}
+                  <button type="button" class="btn btn-ghost timing-mini-del" data-action="chore-delete-sub" data-chore-id="${escapeHtml(chore.id)}" data-sub-id="${escapeHtml(s.id)}" aria-label="מחיקת שלב">✕</button>
+                </div>
               </div>
-              <div class="timing-sub-actions">
-                ${timingRunButtons(chore.id, s.id, iid)}
-                <button type="button" class="btn btn-ghost timing-mini-del" data-action="chore-delete-sub" data-chore-id="${escapeHtml(chore.id)}" data-sub-id="${escapeHtml(s.id)}" aria-label="מחיקת שלב">✕</button>
-              </div>
+              ${timingManualRowHtml(chore.id, s.id)}
             </div>
           `;
-        })
-        .join("");
-    } else {
-      const running = timingState.active?.itemId === parentId;
-      const paused = !running && !!(timingState.paused ?? []).some((p) => p.itemId === parentId);
-      body = `
+      })
+      .join("");
+  } else {
+    const running = timingState.active?.itemId === parentId;
+    const paused = !running && !!(timingState.paused ?? []).some((p) => p.itemId === parentId);
+    body = `
         <div class="timing-sub timing-sub--solo${running ? " timing-sub--running" : ""}${paused ? " timing-sub--paused" : ""}">
-          <div class="timing-sub-actions">
-            ${timingRunButtons(chore.id, "", parentId)}
+          <div class="timing-sub-top">
+            <div class="timing-sub-actions">
+              ${timingRunButtons(chore.id, "", parentId)}
+            </div>
           </div>
+          ${timingManualRowHtml(chore.id, "")}
         </div>
       `;
-    }
+  }
 
-    card.innerHTML = `
+  card.innerHTML = `
       <div class="timing-chore-head">
         <div>
           <div class="timing-title">${escapeHtml(chore.title)}</div>
@@ -2596,7 +2610,70 @@ function renderDailyTimingPage() {
         <button class="btn btn--subtask-add" type="submit">+ שלב</button>
       </form>
     `;
-    catalog.appendChild(card);
+  return card;
+}
+
+function renderDailyTimingPage() {
+  const catalog = document.getElementById("dailyTimingCatalog");
+  const history = document.getElementById("dailyTimingList");
+  if (!catalog || !history) return;
+  catalog.innerHTML = "";
+  history.innerHTML = "";
+
+  const chores = timingState.chores ?? [];
+  const groups = timingState.groups?.length ? timingState.groups : [{ id: CLEAN_GROUP_ID, title: "ניקיון" }];
+
+  if (!chores.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty timing-empty-hint";
+    empty.textContent = "אין משימות בקטלוג — הוסיפי למעלה.";
+    catalog.appendChild(empty);
+  }
+
+  const used = new Set();
+  for (const group of groups) {
+    const wrap = document.createElement("section");
+    wrap.className = "timing-group";
+    wrap.setAttribute("role", "listitem");
+    const wall = findWall(timingState, group.id);
+    const running = !!wall;
+    if (running) wrap.classList.add("timing-group--running");
+    const wStats = statsForItem(timingState, wallItemId(group.id));
+    const gid = escapeHtml(group.id);
+    wrap.innerHTML = `
+      <div class="timing-group-head">
+        <div>
+          <div class="timing-group-title">${escapeHtml(group.title)}</div>
+          <div class="timing-meta">טיימר כללי עצמאי: מההתחלה עד הסיום, כולל הפסקות. השלבים בפנים נמדדים בנפרד.</div>
+          <div class="timing-sub-stats">${escapeHtml(formatTimingStatsLine(wStats))}</div>
+        </div>
+        <div class="timing-group-actions">
+          ${
+            running
+              ? `<span class="timing-live" data-timing-wall="${gid}">${escapeHtml(formatElapsedMs(wallElapsedMs(wall)))}</span>
+                 <button type="button" class="btn" data-action="wall-stop" data-group-id="${gid}">סיום כללי</button>`
+              : `<button type="button" class="btn" data-action="wall-start" data-group-id="${gid}">התחלה כללית</button>`
+          }
+        </div>
+      </div>
+      <div class="timing-manual-row">
+        <input class="input timing-manual-mins" type="number" min="0.1" step="0.1" inputmode="decimal" placeholder="דק׳ כללי מהמכשיר האחר" aria-label="דקות כלליות לרישום ידני" data-timing-manual-mins />
+        <button type="button" class="btn btn-ghost" data-action="wall-manual" data-group-id="${gid}">רישום ידני לכל הניקיון</button>
+      </div>
+      <div class="timing-group-chores" data-group-chores></div>
+    `;
+    const holder = wrap.querySelector("[data-group-chores]");
+    const mine = chores.filter((c) => (c.groupId || CLEAN_GROUP_ID) === group.id);
+    for (const chore of mine) {
+      used.add(chore.id);
+      holder.appendChild(createTimingChoreCard(chore));
+    }
+    catalog.appendChild(wrap);
+  }
+
+  for (const chore of chores) {
+    if (used.has(chore.id)) continue;
+    catalog.appendChild(createTimingChoreCard(chore));
   }
 
   const entries = timingState.entries ?? [];
@@ -2613,9 +2690,15 @@ function renderDailyTimingPage() {
       art.className = "timing-row";
       art.setAttribute("role", "listitem");
       art.innerHTML = `
-        <div class="timing-title">${escapeHtml(e.title)}</div>
+        <div class="timing-title">${escapeHtml(e.title)}${e.manual ? " · ידני" : ""}${e.wall || String(e.itemId || "").startsWith("wall:") ? " · כללי" : ""}</div>
         <div class="timing-meta">${escapeHtml(e.dateKey)}</div>
-        <div class="timing-times">התחלה: ${escapeHtml(st)}<br/>סיום: ${escapeHtml(en)}</div>
+        ${
+          e.wall || String(e.itemId || "").startsWith("wall:")
+            ? `<div class="timing-times">${e.manual ? "נרשם ידנית — " : ""}זמן כולל מההתחלה עד הסיום, כולל הפסקות</div>`
+            : e.manual
+            ? `<div class="timing-times">נרשם ידנית (העתקה ממכשיר אחר / בלי טיימר)</div>`
+            : `<div class="timing-times">התחלה: ${escapeHtml(st)}<br/>סיום: ${escapeHtml(en)}</div>`
+        }
         <div class="timing-duration">משך: <strong>${escapeHtml(formatMinutesShort(e.durationMinutes))}</strong> דק׳</div>
       `;
       history.appendChild(art);
@@ -4160,7 +4243,7 @@ function wireGlobalHandlers() {
       toast("נא להזין שם למשימה.");
       return;
     }
-    addChore(timingState, uid("chore"), t);
+    addChore(timingState, uid("chore"), t, CLEAN_GROUP_ID);
     if (inp) inp.value = "";
     render();
   });
@@ -4248,14 +4331,18 @@ function wireGlobalHandlers() {
         toast("נא להתחבר קודם.");
         return;
       }
-      setCloudBackupHint("working", "מגבה…");
+      const ok = confirm(
+        "לשמור מהמכשיר הזה לענן?\n\nזה מוחק את הגיבוי הקודם בענן ומחליף אותו במה שיש כאן עכשיו.\nהמחשב או הנייד השני לא ישתנו מעצמם — רק אם לוחצים שם «להביא מהענן».",
+      );
+      if (!ok) return;
+      setCloudBackupHint("working", "שומרת מהמכשיר הזה לענן…");
       if (cloudBackupNowBtn) cloudBackupNowBtn.disabled = true;
       try {
         await uploadCloudSnapshot(user.uid);
         const nowIso = new Date().toISOString();
         const timeStr = cloudTimeShort(nowIso);
-        setCloudBackupHint("ok", `✓ גיבוי הועלה ב־${timeStr}`, nowIso);
-        toast(`✓ הגיבוי הועלה לענן בהצלחה (${timeStr})`, { durationMs: 5000 });
+        setCloudBackupHint("ok", `✓ נשמר מהמכשיר הזה לענן ב־${timeStr}`, nowIso);
+        toast(`✓ נשמר לענן (${timeStr})`, { durationMs: 5000 });
       } catch (e) {
         console.error(e);
         setCloudBackupHint("error", "⚠ העלאת גיבוי נכשלה — בדקי חיבור והרשאות Firestore.");
@@ -4272,21 +4359,21 @@ function wireGlobalHandlers() {
         return;
       }
       const ok = confirm(
-        "שחזור מהענן יחליף את כל הנתונים המקומיים (רעיונות, יומן, מלאי, תזמון, הגדרות) בגרסה מהענן.\n\nלהמשיך?",
+        "להביא מהענן למכשיר הזה?\n\nזה מוחק מה שיש כאן עכשיו (רעיונות, יומן, מלאי, מדידות זמן, הגדרות) ומחליף במה ששמור בענן.\n\nאם מדדת במחשב ובנייד בנפרד — אל תעשי את זה. רשמי את הדקות ידנית במסך «משימות עם זמן».",
       );
       if (!ok) return;
       try {
         const data = await fetchCloudSnapshot(user.uid);
         if (!data?.keys || typeof data.keys !== "object") {
-          toast("בענן אין גיבוי עדיין. לחצי קודם «גיבוי עכשיו».");
+          toast("בענן אין עדיין שמירה. לחצי קודם «שמירה מהמכשיר הזה לענן» במכשיר שיש בו את הנתונים שרוצים לשמור.");
           return;
         }
         applyCloudSnapshotToLocalStorage(data);
-        toast("הנתונים שוחזרו. הדף ייטען מחדש…");
+        toast("הנתונים מהענן הגיעו למכשיר הזה. הדף ייטען מחדש…");
         setTimeout(() => location.reload(), 400);
       } catch (e) {
         console.error(e);
-        toast("שחזור נכשל. בדקי הרשאות וחיבור.");
+        toast("לא הצלחתי להביא מהענן. בדקי חיבור והתחברות.");
       }
     });
 
@@ -5053,6 +5140,71 @@ function wireGlobalHandlers() {
       const ent = stopOpenTimer(timingState, itemId);
       render();
       if (ent) toast(`נשמר: ${formatMinutesShort(ent.durationMinutes)} דק׳`);
+      return;
+    }
+
+    if (action === "chore-manual") {
+      const choreId = btn.getAttribute("data-chore-id");
+      const subId = btn.getAttribute("data-sub-id") || "";
+      if (!choreId) return;
+      const wrap = btn.closest(".timing-manual-row");
+      const raw = wrap?.querySelector("[data-timing-manual-mins]")?.value;
+      const mins = Number(String(raw ?? "").replace(",", "."));
+      if (!Number.isFinite(mins) || mins <= 0) {
+        toast("נא לרשום כמה דקות (למשל 12 או 8.5).");
+        return;
+      }
+      const itemId = choreItemId(choreId, subId || null);
+      const ent = addManualTimingEntry(timingState, {
+        itemId,
+        title: choreLabel(timingState, choreId, subId || null),
+        minutes: mins,
+        dateKey: localDateKey(),
+      });
+      render();
+      if (ent) toast(`נרשם ידנית: ${formatMinutesShort(ent.durationMinutes)} דק׳`);
+      return;
+    }
+
+    if (action === "wall-start") {
+      const groupId = btn.getAttribute("data-group-id");
+      if (!groupId) return;
+      if (findWall(timingState, groupId)) return;
+      const title = (timingState.groups ?? []).find((g) => g.id === groupId)?.title || "ניקיון";
+      startWallTimer(timingState, { groupId, title, dateKey: localDateKey() });
+      render();
+      toast("טיימר כללי רץ — כולל הפסקות, עד סיום.");
+      return;
+    }
+
+    if (action === "wall-stop") {
+      const groupId = btn.getAttribute("data-group-id");
+      if (!groupId) return;
+      const ent = stopWallTimer(timingState, groupId);
+      render();
+      if (ent) toast(`נשמר זמן כללי: ${formatMinutesShort(ent.durationMinutes)} דק׳ (כולל הפסקות)`);
+      return;
+    }
+
+    if (action === "wall-manual") {
+      const groupId = btn.getAttribute("data-group-id");
+      if (!groupId) return;
+      const wrap = btn.closest(".timing-manual-row");
+      const raw = wrap?.querySelector("[data-timing-manual-mins]")?.value;
+      const mins = Number(String(raw ?? "").replace(",", "."));
+      if (!Number.isFinite(mins) || mins <= 0) {
+        toast("נא לרשום כמה דקות (למשל 90 או 45.5).");
+        return;
+      }
+      const title = (timingState.groups ?? []).find((g) => g.id === groupId)?.title || "ניקיון";
+      const ent = addManualTimingEntry(timingState, {
+        itemId: wallItemId(groupId),
+        title,
+        minutes: mins,
+        dateKey: localDateKey(),
+      });
+      render();
+      if (ent) toast(`נרשם זמן כללי ידני: ${formatMinutesShort(ent.durationMinutes)} דק׳`);
       return;
     }
 

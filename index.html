@@ -107,15 +107,20 @@
           <p id="cloudBackupNoConfig" class="dialog-hint cloud-backup-no-env hidden">חסרה תצורת Firebase.</p>
           <div id="cloudBackupPanel" class="cloud-backup-panel">
             <p id="cloudBackupUserLine" class="dialog-text dialog-text--tight">—</p>
+            <div class="cloud-backup-explain">
+              <p>הענן הוא <strong>תיקייה אחת</strong> באינטרנט. המחשב והנייד לא מעתיקים אחד לשני לבד.</p>
+              <p><strong>שמירה מהמכשיר הזה לענן</strong> — מעתיק הכל מכאן לתיקייה. מה שהיה בתיקייה נמחק. המכשיר השני לא משתנה עד שלוחצים שם «להביא מהענן».</p>
+              <p><strong>להביא מהענן למכשיר הזה</strong> — מעתיק מהתיקייה לכאן. מה שהיה במכשיר הזה נמחק (גם מדידות זמן). אם מדדת במחשב ובנייד בנפרד — אל תלחצי כאן; רשמי דקות ידנית במסך «משימות עם זמן».</p>
+            </div>
             <label class="checkline">
               <input id="cloudAutoBackup" type="checkbox" />
-              גיבוי אוטומטי אחרי שינוי
+              שמירה אוטומטית לענן אחרי כל שינוי במכשיר הזה (מחליף את מה שבענן)
             </label>
             <div class="dialog-actions dialog-actions--wrap">
               <button id="cloudSignInBtn" class="btn" type="button">התחברות Google</button>
               <button id="cloudSignOutBtn" class="btn btn-ghost hidden" type="button">התנתקות</button>
-              <button id="cloudBackupNowBtn" class="btn" type="button" disabled>גיבוי עכשיו</button>
-              <button id="cloudRestoreBtn" class="btn btn-ghost" type="button" disabled>שחזור מהענן…</button>
+              <button id="cloudBackupNowBtn" class="btn" type="button" disabled>שמירה מהמכשיר הזה לענן</button>
+              <button id="cloudRestoreBtn" class="btn btn-ghost" type="button" disabled>להביא מהענן למכשיר הזה…</button>
             </div>
             <p id="cloudBackupHint" class="dialog-hint"></p>
           </div>
@@ -694,10 +699,10 @@
           <div class="panel-title">משימות עם זמן</div>
         </div>
         <p class="timing-intro">
-          מדידה של אותה משימה בימים שונים — כאן רואים ממוצע. אפשר לעצור (פאוז) ולחזור להמשך; אם עוברים למשימה אחרת, המושהית מחכה עד שחוזרים אליה.
+          מדידה של אותה משימה בימים שונים. כותרת «ניקיון» סופרת מההתחלה עד הסיום כולל הפסקות — כמה זמן לקח הכל ביחד. השלבים בפנים (סלון, שירותים…) נמדדים בנפרד, עם פאוז בלי הפסקות.
         </p>
         <form id="timingAddChoreForm" class="add-row timing-add-chore" autocomplete="off">
-          <input id="timingNewChoreTitle" class="input" type="text" maxlength="80" placeholder="משימה חדשה…" aria-label="שם משימה חדשה" />
+          <input id="timingNewChoreTitle" class="input" type="text" maxlength="80" placeholder="משימה חדשה תחת ניקיון…" aria-label="שם משימה חדשה תחת ניקיון" />
           <button class="btn" type="submit">הוספה</button>
         </form>
         <div id="dailyTimingCatalog" class="timing-catalog" role="list"></div>

@@ -40,14 +40,39 @@ export const DEFAULT_CHORES = [
   },
 ];
 
+export const CLEAN_GROUP_ID = "group_clean";
+
+export const DEFAULT_GROUPS = [{ id: CLEAN_GROUP_ID, title: "ניקיון" }];
+
 export function defaultTimingState() {
-  return { entries: [], active: null, paused: [], chores: cloneChores(DEFAULT_CHORES) };
+  return {
+    entries: [],
+    active: null,
+    paused: [],
+    walls: [],
+    groups: cloneGroups(DEFAULT_GROUPS),
+    chores: cloneChores(DEFAULT_CHORES),
+  };
+}
+
+function cloneGroups(list) {
+  const groups = (list ?? [])
+    .map((g) => ({
+      id: String(g.id || "").trim(),
+      title: String(g.title ?? "").trim() || "קבוצה",
+    }))
+    .filter((g) => g.id);
+  if (!groups.some((g) => g.id === CLEAN_GROUP_ID)) {
+    groups.unshift({ id: CLEAN_GROUP_ID, title: "ניקיון" });
+  }
+  return groups;
 }
 
 function cloneChores(list) {
   return (list ?? []).map((c) => ({
     id: String(c.id),
     title: String(c.title ?? "").trim() || "משימה",
+    groupId: String(c.groupId || CLEAN_GROUP_ID),
     subs: Array.isArray(c.subs)
       ? c.subs
           .map((s) => ({
@@ -57,6 +82,26 @@ function cloneChores(list) {
           .filter((s) => s.id && s.title)
       : [],
   }));
+}
+
+function sanitizeWalls(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of list) {
+    if (!raw || typeof raw !== "object") continue;
+    const groupId = String(raw.groupId || "").trim();
+    const startedAt = raw.startedAt ? String(raw.startedAt) : "";
+    if (!groupId || !startedAt || seen.has(groupId)) continue;
+    seen.add(groupId);
+    out.push({
+      groupId,
+      title: String(raw.title ?? "").trim() || "ניקיון",
+      dateKey: String(raw.dateKey || ""),
+      startedAt,
+    });
+  }
+  return out;
 }
 
 function validEntry(e) {
@@ -131,12 +176,15 @@ export function loadTimingState() {
     const entries = Array.isArray(p.entries) ? p.entries.filter(validEntry) : [];
     const active = sanitizeSession(p.active, { running: true });
     const paused = sanitizePausedList(p.paused);
-    if (!Array.isArray(p.chores) || p.chores.length === 0) {
-      const migrated = { entries, active, paused, chores: cloneChores(DEFAULT_CHORES) };
-      saveTimingState(migrated);
-      return migrated;
-    }
-    return { entries, active, paused, chores: cloneChores(p.chores) };
+    const walls = sanitizeWalls(p.walls);
+    const groups = cloneGroups(p.groups);
+    const chores = !Array.isArray(p.chores) || p.chores.length === 0
+      ? cloneChores(DEFAULT_CHORES)
+      : cloneChores(p.chores);
+    const next = { entries, active, paused, walls, groups, chores };
+    const needsSave = !Array.isArray(p.groups) || !Array.isArray(p.walls) || !Array.isArray(p.chores) || p.chores.length === 0;
+    if (needsSave) saveTimingState(next);
+    return next;
   } catch {
     return defaultTimingState();
   }
@@ -165,6 +213,59 @@ function uidTiming(prefix = "tlog") {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
 }
 
+export function wallItemId(groupId) {
+  return `wall:${String(groupId || "")}`;
+}
+
+export function findWall(state, groupId) {
+  return (state.walls ?? []).find((w) => w.groupId === groupId) ?? null;
+}
+
+export function wallElapsedMs(wall) {
+  if (!wall?.startedAt) return 0;
+  const t0 = new Date(wall.startedAt).getTime();
+  if (Number.isNaN(t0)) return 0;
+  return Math.max(0, Date.now() - t0);
+}
+
+export function startWallTimer(state, { groupId, title, dateKey }) {
+  if (!groupId) return false;
+  if (!Array.isArray(state.walls)) state.walls = [];
+  if (state.walls.some((w) => w.groupId === groupId)) return false;
+  state.walls.push({
+    groupId,
+    title: String(title ?? "").trim() || "ניקיון",
+    dateKey,
+    startedAt: new Date().toISOString(),
+  });
+  saveTimingState(state);
+  return true;
+}
+
+export function stopWallTimer(state, groupId) {
+  if (!Array.isArray(state.walls)) state.walls = [];
+  const idx = state.walls.findIndex((w) => w.groupId === groupId);
+  if (idx < 0) return null;
+  const w = state.walls[idx];
+  state.walls.splice(idx, 1);
+  const end = new Date();
+  const durationMinutes = Math.round((wallElapsedMs(w) / 60000) * 10) / 10;
+  const entry = {
+    id: uidTiming("twall"),
+    title: w.title,
+    dateKey: w.dateKey || "",
+    itemId: wallItemId(groupId),
+    startedAt: w.startedAt,
+    endedAt: end.toISOString(),
+    durationMinutes,
+    wall: true,
+  };
+  if (!Array.isArray(state.entries)) state.entries = [];
+  state.entries.unshift(entry);
+  saveTimingState(state);
+  return entry;
+}
+
 export function choreItemId(choreId, subId = null) {
   const c = String(choreId || "");
   const s = String(subId || "").trim();
@@ -189,11 +290,11 @@ export function choreLabel(state, choreId, subId = null) {
   return s ? `${c.title} · ${s.title}` : c.title;
 }
 
-export function addChore(state, id, title) {
+export function addChore(state, id, title, groupId = CLEAN_GROUP_ID) {
   const t = String(title ?? "").trim();
   if (!t) return false;
   if (!Array.isArray(state.chores)) state.chores = [];
-  state.chores.push({ id, title: t, subs: [] });
+  state.chores.push({ id, title: t, groupId: String(groupId || CLEAN_GROUP_ID), subs: [] });
   saveTimingState(state);
   return true;
 }
@@ -340,6 +441,27 @@ export function timersMatch(state, dateKey, itemId) {
 
 export function entriesForItem(state, itemId) {
   return (state.entries ?? []).filter((e) => e.itemId === itemId);
+}
+
+export function addManualTimingEntry(state, { itemId, title, minutes, dateKey }) {
+  const durationMinutes = Math.round(Number(minutes) * 10) / 10;
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
+  const now = new Date();
+  const entry = {
+    id: uidTiming("tman"),
+    title: String(title ?? "").trim() || "משימה",
+    dateKey: String(dateKey || ""),
+    itemId: String(itemId),
+    startedAt: now.toISOString(),
+    endedAt: now.toISOString(),
+    durationMinutes,
+    manual: true,
+  };
+  if (!entry.dateKey) return null;
+  if (!Array.isArray(state.entries)) state.entries = [];
+  state.entries.unshift(entry);
+  saveTimingState(state);
+  return entry;
 }
 
 export function statsForItem(state, itemId) {
