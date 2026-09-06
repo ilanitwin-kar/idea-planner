@@ -14,8 +14,10 @@ import {
   TIMING_LOG_KEY,
   loadTimingState,
   startDayItemTimer,
-  stopDayItemTimer,
-  cancelActiveTimer,
+  stopOpenTimer,
+  cancelOpenTimer,
+  pauseActiveTimer,
+  resumeTimer,
   timersMatch,
   setAfterTimingPersist,
   choreItemId,
@@ -27,6 +29,8 @@ import {
   statsForItem,
   estimatedParentMinutes,
   formatMinutesShort,
+  findOpenSession,
+  sessionElapsedMs,
 } from "./daily-timing-log.js";
 import {
   isCloudBackupConfigured,
@@ -2371,20 +2375,26 @@ function formatElapsedMs(ms) {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
+function sessionClockText(session) {
+  return formatElapsedMs(sessionElapsedMs(session));
+}
+
 function activeTimerElapsedText() {
-  const a = timingState.active;
-  if (!a?.startedAt) return "0:00";
-  const t0 = new Date(a.startedAt).getTime();
-  if (Number.isNaN(t0)) return "0:00";
-  return formatElapsedMs(Date.now() - t0);
+  return sessionClockText(timingState.active);
 }
 
 function updateDailyTimerClock() {
-  const text = activeTimerElapsedText();
-  const el = document.getElementById("dailyTimerClock");
-  if (el) el.textContent = timingState.active ? text : "0:00";
+  const dlg = document.getElementById("dailyTimerDialog");
+  const clockEl = document.getElementById("dailyTimerClock");
+  if (clockEl && dlg instanceof HTMLDialogElement) {
+    const id = dlg.dataset.targetItemId;
+    const here = id ? findOpenSession(timingState, id) : timingState.active;
+    clockEl.textContent = here ? sessionClockText(here) : "0:00";
+  }
   document.querySelectorAll("[data-timing-live]").forEach((node) => {
-    node.textContent = timingState.active ? text : "";
+    const id = node.getAttribute("data-timing-live");
+    const sess = id ? findOpenSession(timingState, id) : timingState.active;
+    node.textContent = sess ? sessionClockText(sess) : "0:00";
   });
 }
 
@@ -2406,34 +2416,39 @@ function syncDailyTimerDialogUI() {
   const taskLine = document.getElementById("dailyTimerTaskLine");
   const meta = document.getElementById("dailyTimerMeta");
   const btnStart = document.getElementById("dailyTimerStart");
+  const btnPause = document.getElementById("dailyTimerPause");
   const btnStop = document.getElementById("dailyTimerStop");
   const btnDiscard = document.getElementById("dailyTimerDiscard");
-  if (!dlg || !taskLine || !meta || !btnStart || !btnStop || !btnDiscard) return;
+  if (!dlg || !taskLine || !meta || !btnStart || !btnPause || !btnStop || !btnDiscard) return;
 
   const dk = dlg.dataset.targetDateKey;
   const id = dlg.dataset.targetItemId;
   const it = dk && id ? findDayJournalItem(dk, id) : null;
   const label = dayItemLabel(it) || "משימה";
 
-  const active = timingState.active;
-  const same = timersMatch(timingState, dk, id);
-  const runningHere = !!(active && same);
+  const here = id ? findOpenSession(timingState, id) : null;
+  const runningHere = !!(timingState.active && timersMatch(timingState, dk, id));
+  const pausedHere = !!(here && !runningHere);
+  const otherRunning = !!(timingState.active && !runningHere);
 
   taskLine.textContent = `משימה: ${label}`;
 
-  if (!active) {
-    meta.textContent =
-      "לחצי «התחלה» כשמתחילות לעבוד, ו«סיום ושמירה» כשסיימת — המשך יופיע ב«משימות עם זמן».";
-  } else if (runningHere) {
-    const st = new Date(active.startedAt).toLocaleString("he-IL");
-    meta.textContent = `התחלה: ${st}`;
+  if (runningHere) {
+    meta.textContent = "רץ עכשיו. «פאוז» שומר את מה שנצבר; אפשר לעבור למשימה אחרת ולחזור עם «המשך».";
+  } else if (pausedHere) {
+    meta.textContent = "מושהה — הזמן מחכה. «המשך» ממשיך מכאן, גם אם בינתיים מדדת משהו אחר.";
+  } else if (otherRunning) {
+    meta.textContent = `רץ עכשיו «${timingState.active.title}». התחלה כאן תשים אותו על פאוז.`;
   } else {
-    meta.textContent = `יש טיימר פעיל על «${active.title}». «סיום ושמירה» ישמור את המדידה שלו; אחר כך אפשר להפעיל כאן.`;
+    meta.textContent =
+      "לחצי «התחלה» כשמתחילות לעבוד. אפשר פאוז בהפסקות, ו«סיום ושמירה» כשסיימת.";
   }
 
-  btnStart.disabled = !!active;
-  btnStop.disabled = !active;
-  btnDiscard.disabled = !active;
+  btnStart.disabled = runningHere;
+  btnStart.textContent = pausedHere ? "המשך" : "התחלה";
+  btnPause.disabled = !runningHere;
+  btnStop.disabled = !here;
+  btnDiscard.disabled = !here;
 
   updateDailyTimerClock();
 }
@@ -2470,17 +2485,31 @@ function formatTimingStatsLine(st) {
 
 function timingRunButtons(choreId, subId, itemId) {
   const running = timingState.active?.itemId === itemId;
-  const otherRunning = !!(timingState.active && !running);
+  const paused = !running && !!(timingState.paused ?? []).some((s) => s.itemId === itemId);
+  const sess = findOpenSession(timingState, itemId);
   const cid = escapeHtml(choreId);
   const sid = escapeHtml(subId || "");
+  const iid = escapeHtml(itemId);
+  const clock = sess
+    ? `<span class="timing-live" data-timing-live="${iid}">${escapeHtml(sessionClockText(sess))}</span>`
+    : "";
   if (running) {
     return `
-      <span class="timing-live" data-timing-live>${escapeHtml(activeTimerElapsedText())}</span>
-      <button type="button" class="btn" data-action="chore-stop">סיום</button>
+      ${clock}
+      <button type="button" class="btn btn-ghost" data-action="chore-pause">פאוז</button>
+      <button type="button" class="btn" data-action="chore-stop" data-item-id="${iid}">סיום</button>
+    `;
+  }
+  if (paused) {
+    return `
+      ${clock}
+      <span class="timing-paused-tag">מושהה</span>
+      <button type="button" class="btn" data-action="chore-resume" data-chore-id="${cid}" data-sub-id="${sid}">המשך</button>
+      <button type="button" class="btn btn-ghost" data-action="chore-stop" data-item-id="${iid}">סיום</button>
     `;
   }
   return `
-    <button type="button" class="btn btn-ghost" data-action="chore-start" data-chore-id="${cid}" data-sub-id="${sid}" ${otherRunning ? "disabled" : ""}>התחלה</button>
+    <button type="button" class="btn btn-ghost" data-action="chore-start" data-chore-id="${cid}" data-sub-id="${sid}">התחלה</button>
   `;
 }
 
@@ -2520,8 +2549,9 @@ function renderDailyTimingPage() {
           const iid = choreItemId(chore.id, s.id);
           const st = statsForItem(timingState, iid);
           const running = timingState.active?.itemId === iid;
+          const paused = !running && !!(timingState.paused ?? []).some((p) => p.itemId === iid);
           return `
-            <div class="timing-sub${running ? " timing-sub--running" : ""}">
+            <div class="timing-sub${running ? " timing-sub--running" : ""}${paused ? " timing-sub--paused" : ""}">
               <div class="timing-sub-main">
                 <div class="timing-sub-title">${escapeHtml(s.title)}</div>
                 <div class="timing-sub-stats">${escapeHtml(formatTimingStatsLine(st))}</div>
@@ -2536,8 +2566,9 @@ function renderDailyTimingPage() {
         .join("");
     } else {
       const running = timingState.active?.itemId === parentId;
+      const paused = !running && !!(timingState.paused ?? []).some((p) => p.itemId === parentId);
       body = `
-        <div class="timing-sub timing-sub--solo${running ? " timing-sub--running" : ""}">
+        <div class="timing-sub timing-sub--solo${running ? " timing-sub--running" : ""}${paused ? " timing-sub--paused" : ""}">
           <div class="timing-sub-actions">
             ${timingRunButtons(chore.id, "", parentId)}
           </div>
@@ -3956,10 +3987,11 @@ function wirePantryBarcodeUI() {
 function wireDailyTimerDialog() {
   const dlg = document.getElementById("dailyTimerDialog");
   const btnStart = document.getElementById("dailyTimerStart");
+  const btnPause = document.getElementById("dailyTimerPause");
   const btnStop = document.getElementById("dailyTimerStop");
   const btnDiscard = document.getElementById("dailyTimerDiscard");
   const btnClose = document.getElementById("dailyTimerCloseBtn");
-  if (!dlg || !btnStart || !btnStop || !btnDiscard || !btnClose) return;
+  if (!dlg || !btnStart || !btnPause || !btnStop || !btnDiscard || !btnClose) return;
 
   dlg.addEventListener("close", () => {
     if (!timingState.active) clearDailyTimerTick();
@@ -3974,30 +4006,42 @@ function wireDailyTimerDialog() {
     const dk = dlg.dataset.targetDateKey;
     const id = dlg.dataset.targetItemId;
     if (!dk || !id) return;
-    if (timingState.active) {
-      toast("כבר רץ טיימר — סיימי אותו או בטלי מדידה.");
-      return;
-    }
     const it = findDayJournalItem(dk, id);
     if (!it) return;
+    const pausingOther = !!(timingState.active && timingState.active.itemId !== id);
     startDayItemTimer(timingState, { dateKey: dk, itemId: id, title: dayItemLabel(it) });
     syncDailyTimerDialogUI();
     render();
+    toast(pausingOther ? "הושהה הקודם — זה רץ עכשיו." : "הטיימר רץ.");
+  });
+
+  btnPause.addEventListener("click", () => {
+    if (!(dlg instanceof HTMLDialogElement)) return;
+    const id = dlg.dataset.targetItemId;
+    if (!id || timingState.active?.itemId !== id) return;
+    pauseActiveTimer(timingState);
+    syncDailyTimerDialogUI();
+    render();
+    toast("מושהה — אפשר לחזור להמשך.");
   });
 
   btnStop.addEventListener("click", () => {
-    if (!timingState.active) return;
-    const ent = stopDayItemTimer(timingState);
+    if (!(dlg instanceof HTMLDialogElement)) return;
+    const id = dlg.dataset.targetItemId;
+    if (!id) return;
+    const ent = stopOpenTimer(timingState, id);
     syncDailyTimerDialogUI();
     render();
-    if (ent) toast(`נשמר: ${ent.durationMinutes} דק׳`);
+    if (ent) toast(`נשמר: ${formatMinutesShort(ent.durationMinutes)} דק׳`);
   });
 
   btnDiscard.addEventListener("click", () => {
-    if (!timingState.active) return;
+    if (!(dlg instanceof HTMLDialogElement)) return;
+    const id = dlg.dataset.targetItemId;
+    if (!id || !findOpenSession(timingState, id)) return;
     const ok = confirm("למחוק את המדידה בלי לשמור?");
     if (!ok) return;
-    cancelActiveTimer(timingState);
+    cancelOpenTimer(timingState, id);
     syncDailyTimerDialogUI();
     render();
     toast("הטיימר בוטל.");
@@ -4921,7 +4965,9 @@ function wireGlobalHandlers() {
       const kab = btn.closest("details.daily-kebab");
       if (kab) kab.open = false;
       if (timingState.active?.dateKey === dk && timingState.active?.itemId === id) {
-        cancelActiveTimer(timingState);
+        cancelOpenTimer(timingState, id);
+      } else if ((timingState.paused ?? []).some((s) => s.itemId === id)) {
+        cancelOpenTimer(timingState, id);
       }
       deleteDayItem(dayJournal, dk, id);
       persistDayJournal();
@@ -4969,24 +5015,42 @@ function wireGlobalHandlers() {
       const choreId = btn.getAttribute("data-chore-id");
       const subId = btn.getAttribute("data-sub-id") || "";
       if (!choreId) return;
-      if (timingState.active) {
-        toast("כבר רץ טיימר — סיימי אותו קודם.");
-        return;
-      }
       const itemId = choreItemId(choreId, subId || null);
+      const pausingOther = !!(timingState.active && timingState.active.itemId !== itemId);
       startDayItemTimer(timingState, {
         dateKey: localDateKey(),
         itemId,
         title: choreLabel(timingState, choreId, subId || null),
       });
       render();
-      toast("הטיימר רץ.");
+      toast(pausingOther ? "הושהה הקודם — זה רץ עכשיו." : "הטיימר רץ.");
+      return;
+    }
+
+    if (action === "chore-pause") {
+      if (!timingState.active) return;
+      pauseActiveTimer(timingState);
+      render();
+      toast("מושהה — אפשר לעבור למשהו אחר ולחזור להמשך.");
+      return;
+    }
+
+    if (action === "chore-resume") {
+      const choreId = btn.getAttribute("data-chore-id");
+      const subId = btn.getAttribute("data-sub-id") || "";
+      if (!choreId) return;
+      const itemId = choreItemId(choreId, subId || null);
+      const pausingOther = !!(timingState.active && timingState.active.itemId !== itemId);
+      resumeTimer(timingState, itemId);
+      render();
+      toast(pausingOther ? "הושהה הקודם — ממשיכות מכאן." : "ממשיכות.");
       return;
     }
 
     if (action === "chore-stop") {
-      if (!timingState.active) return;
-      const ent = stopDayItemTimer(timingState);
+      const itemId = btn.getAttribute("data-item-id") || timingState.active?.itemId;
+      if (!itemId) return;
+      const ent = stopOpenTimer(timingState, itemId);
       render();
       if (ent) toast(`נשמר: ${formatMinutesShort(ent.durationMinutes)} דק׳`);
       return;

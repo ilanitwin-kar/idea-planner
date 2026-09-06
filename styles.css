@@ -995,6 +995,22 @@ body.app-mode-home .top-menu-dialog{
   border-color: var(--accent-pink);
   background: var(--accent-pink-soft);
 }
+.timing-sub--paused{
+  border-color: #c9a227;
+  background: #fff8e1;
+}
+.timing-sub--solo.timing-sub--running,
+.timing-sub--solo.timing-sub--paused{
+  border-width: 1px;
+  border-style: solid;
+  padding: 10px;
+}
+.timing-paused-tag{
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #8a6d12;
+  white-space: nowrap;
+}
 .timing-sub-main{ min-width: 0; flex: 1; }
 .timing-sub-title{
   font-weight: 700;

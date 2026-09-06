@@ -41,7 +41,7 @@ export const DEFAULT_CHORES = [
 ];
 
 export function defaultTimingState() {
-  return { entries: [], active: null, chores: cloneChores(DEFAULT_CHORES) };
+  return { entries: [], active: null, paused: [], chores: cloneChores(DEFAULT_CHORES) };
 }
 
 function cloneChores(list) {
@@ -74,15 +74,48 @@ function validEntry(e) {
   );
 }
 
-function sanitizeActive(a) {
+function sanitizeSession(a, { running }) {
   if (!a || typeof a !== "object") return null;
-  if (!a.startedAt || !a.dateKey || !a.itemId) return null;
+  if (!a.dateKey || !a.itemId) return null;
+  const startedAt = a.startedAt ? String(a.startedAt) : "";
+  if (running && !startedAt) return null;
+  const accumulatedMs = Math.max(0, Number(a.accumulatedMs) || 0);
   return {
     dateKey: String(a.dateKey),
     itemId: String(a.itemId),
     title: String(a.title ?? "").trim() || "משימה",
-    startedAt: String(a.startedAt),
+    startedAt: running ? startedAt : null,
+    accumulatedMs,
+    firstStartedAt: String(a.firstStartedAt || a.startedAt || new Date().toISOString()),
   };
+}
+
+function sanitizePausedList(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of list) {
+    const s = sanitizeSession(raw, { running: false });
+    if (!s || seen.has(s.itemId)) continue;
+    seen.add(s.itemId);
+    out.push(s);
+  }
+  return out;
+}
+
+export function sessionElapsedMs(session) {
+  if (!session) return 0;
+  let ms = Math.max(0, Number(session.accumulatedMs) || 0);
+  if (session.startedAt) {
+    const t0 = new Date(session.startedAt).getTime();
+    if (!Number.isNaN(t0)) ms += Math.max(0, Date.now() - t0);
+  }
+  return ms;
+}
+
+export function findOpenSession(state, itemId) {
+  if (state.active?.itemId === itemId) return state.active;
+  return (state.paused ?? []).find((s) => s.itemId === itemId) ?? null;
 }
 
 export function loadTimingState() {
@@ -96,13 +129,14 @@ export function loadTimingState() {
     const p = JSON.parse(raw);
     if (!p || typeof p !== "object") return defaultTimingState();
     const entries = Array.isArray(p.entries) ? p.entries.filter(validEntry) : [];
-    const active = sanitizeActive(p.active);
+    const active = sanitizeSession(p.active, { running: true });
+    const paused = sanitizePausedList(p.paused);
     if (!Array.isArray(p.chores) || p.chores.length === 0) {
-      const migrated = { entries, active, chores: cloneChores(DEFAULT_CHORES) };
+      const migrated = { entries, active, paused, chores: cloneChores(DEFAULT_CHORES) };
       saveTimingState(migrated);
       return migrated;
     }
-    return { entries, active, chores: cloneChores(p.chores) };
+    return { entries, active, paused, chores: cloneChores(p.chores) };
   } catch {
     return defaultTimingState();
   }
@@ -175,9 +209,18 @@ export function addChoreSub(state, choreId, subId, title) {
   return true;
 }
 
+function dropOpenForItem(state, itemId) {
+  if (state.active?.itemId === itemId) state.active = null;
+  state.paused = (state.paused ?? []).filter((s) => s.itemId !== itemId);
+}
+
 export function deleteChore(state, choreId) {
   state.chores = (state.chores ?? []).filter((c) => c.id !== choreId);
-  if (state.active?.itemId?.startsWith(`chore:${choreId}`)) state.active = null;
+  const prefix = `chore:${choreId}`;
+  if (state.active?.itemId === prefix || state.active?.itemId?.startsWith(`${prefix}:`)) state.active = null;
+  state.paused = (state.paused ?? []).filter(
+    (s) => s.itemId !== prefix && !s.itemId.startsWith(`${prefix}:`),
+  );
   saveTimingState(state);
 }
 
@@ -185,46 +228,110 @@ export function deleteChoreSub(state, choreId, subId) {
   const c = findChore(state, choreId);
   if (!c) return;
   c.subs = (c.subs ?? []).filter((s) => s.id !== subId);
-  if (state.active?.itemId === choreItemId(choreId, subId)) state.active = null;
+  dropOpenForItem(state, choreItemId(choreId, subId));
   saveTimingState(state);
+}
+
+function ensurePausedArray(state) {
+  if (!Array.isArray(state.paused)) state.paused = [];
+}
+
+export function pauseActiveTimer(state) {
+  if (!state.active) return null;
+  const paused = {
+    dateKey: state.active.dateKey,
+    itemId: state.active.itemId,
+    title: state.active.title,
+    startedAt: null,
+    accumulatedMs: sessionElapsedMs(state.active),
+    firstStartedAt: state.active.firstStartedAt || state.active.startedAt,
+  };
+  ensurePausedArray(state);
+  state.paused = state.paused.filter((s) => s.itemId !== paused.itemId);
+  state.paused.unshift(paused);
+  state.active = null;
+  saveTimingState(state);
+  return paused;
+}
+
+export function resumeTimer(state, itemId) {
+  ensurePausedArray(state);
+  const idx = state.paused.findIndex((s) => s.itemId === itemId);
+  if (idx < 0) return false;
+  if (state.active?.itemId && state.active.itemId !== itemId) pauseActiveTimer(state);
+  const sess = state.paused.find((s) => s.itemId === itemId);
+  if (!sess) return false;
+  state.paused = state.paused.filter((s) => s.itemId !== itemId);
+  sess.startedAt = new Date().toISOString();
+  state.active = sess;
+  saveTimingState(state);
+  return true;
 }
 
 export function startDayItemTimer(state, { dateKey, itemId, title }) {
+  if (state.active?.itemId === itemId) return;
+  if ((state.paused ?? []).some((s) => s.itemId === itemId)) {
+    resumeTimer(state, itemId);
+    return;
+  }
+  if (state.active) pauseActiveTimer(state);
   const t = String(title ?? "").trim() || "משימה";
-  state.active = { dateKey, itemId, title: t, startedAt: new Date().toISOString() };
+  const now = new Date().toISOString();
+  state.active = {
+    dateKey,
+    itemId,
+    title: t,
+    startedAt: now,
+    accumulatedMs: 0,
+    firstStartedAt: now,
+  };
   saveTimingState(state);
 }
 
-export function stopDayItemTimer(state) {
-  if (!state.active?.startedAt) return null;
-  const end = new Date();
-  const start = new Date(state.active.startedAt);
-  if (Number.isNaN(start.getTime())) {
+export function stopOpenTimer(state, itemId = null) {
+  const targetId = itemId || state.active?.itemId;
+  if (!targetId) return null;
+  let sess = null;
+  if (state.active?.itemId === targetId) {
+    sess = state.active;
     state.active = null;
-    saveTimingState(state);
-    return null;
+  } else {
+    ensurePausedArray(state);
+    const idx = state.paused.findIndex((s) => s.itemId === targetId);
+    if (idx < 0) return null;
+    sess = state.paused[idx];
+    state.paused.splice(idx, 1);
   }
-  const diffMs = Math.max(0, end.getTime() - start.getTime());
-  const durationMinutes = Math.round((diffMs / 60000) * 10) / 10;
+  const end = new Date();
+  const durationMinutes = Math.round((sessionElapsedMs(sess) / 60000) * 10) / 10;
   const entry = {
     id: uidTiming(),
-    title: state.active.title,
-    dateKey: state.active.dateKey,
-    itemId: state.active.itemId,
-    startedAt: state.active.startedAt,
+    title: sess.title,
+    dateKey: sess.dateKey,
+    itemId: sess.itemId,
+    startedAt: sess.firstStartedAt || sess.startedAt || end.toISOString(),
     endedAt: end.toISOString(),
     durationMinutes,
   };
   if (!Array.isArray(state.entries)) state.entries = [];
   state.entries.unshift(entry);
-  state.active = null;
   saveTimingState(state);
   return entry;
 }
 
-export function cancelActiveTimer(state) {
-  state.active = null;
+export function stopDayItemTimer(state) {
+  return stopOpenTimer(state, state.active?.itemId || null);
+}
+
+export function cancelOpenTimer(state, itemId = null) {
+  const targetId = itemId || state.active?.itemId;
+  if (!targetId) return;
+  dropOpenForItem(state, targetId);
   saveTimingState(state);
+}
+
+export function cancelActiveTimer(state) {
+  cancelOpenTimer(state, state.active?.itemId || null);
 }
 
 export function timersMatch(state, dateKey, itemId) {

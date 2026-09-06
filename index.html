@@ -171,7 +171,8 @@
         <div id="dailyTimerMeta" class="dialog-hint"></div>
         <div id="dailyTimerClock" class="daily-timer-clock" aria-live="polite">0:00</div>
         <div class="dialog-actions dialog-actions--wrap">
-          <button id="dailyTimerStart" type="button" class="btn">התחלה</button>
+          <button id="dailyTimerStart" type="button" class="btn">התחלה / המשך</button>
+          <button id="dailyTimerPause" type="button" class="btn btn-ghost">פאוז</button>
           <button id="dailyTimerStop" type="button" class="btn">סיום ושמירה</button>
           <button id="dailyTimerDiscard" type="button" class="btn btn-ghost">ביטול מדידה</button>
           <button id="dailyTimerCloseBtn" type="button" class="btn btn-ghost">סגירה</button>
@@ -693,7 +694,7 @@
           <div class="panel-title">משימות עם זמן</div>
         </div>
         <p class="timing-intro">
-          מדידה של אותה משימה בימים שונים — כאן רואים ממוצע. משימה עם שלבים (כמו ניקיון סלון) נמדדת לכל שלב בנפרד; משימה בלי שלבים (כמו שירותים) נמדדת כשורה אחת.
+          מדידה של אותה משימה בימים שונים — כאן רואים ממוצע. אפשר לעצור (פאוז) ולחזור להמשך; אם עוברים למשימה אחרת, המושהית מחכה עד שחוזרים אליה.
         </p>
         <form id="timingAddChoreForm" class="add-row timing-add-chore" autocomplete="off">
           <input id="timingNewChoreTitle" class="input" type="text" maxlength="80" placeholder="משימה חדשה…" aria-label="שם משימה חדשה" />
