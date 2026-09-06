@@ -18,6 +18,15 @@ import {
   cancelActiveTimer,
   timersMatch,
   setAfterTimingPersist,
+  choreItemId,
+  choreLabel,
+  addChore,
+  addChoreSub,
+  deleteChore,
+  deleteChoreSub,
+  statsForItem,
+  estimatedParentMinutes,
+  formatMinutesShort,
 } from "./daily-timing-log.js";
 import {
   isCloudBackupConfigured,
@@ -996,7 +1005,7 @@ function screenTitleForMode(mode) {
     case "daily-master":
       return "כל הימים";
     case "timing":
-      return "מדידות זמן";
+      return "משימות עם זמן";
     case "daily-future":
       return "בהמשך";
     case "daily-history":
@@ -2362,20 +2371,34 @@ function formatElapsedMs(ms) {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-function updateDailyTimerClock() {
-  const el = document.getElementById("dailyTimerClock");
-  if (!el) return;
+function activeTimerElapsedText() {
   const a = timingState.active;
-  if (!a?.startedAt) {
-    el.textContent = "0:00";
-    return;
-  }
+  if (!a?.startedAt) return "0:00";
   const t0 = new Date(a.startedAt).getTime();
-  if (Number.isNaN(t0)) {
-    el.textContent = "0:00";
+  if (Number.isNaN(t0)) return "0:00";
+  return formatElapsedMs(Date.now() - t0);
+}
+
+function updateDailyTimerClock() {
+  const text = activeTimerElapsedText();
+  const el = document.getElementById("dailyTimerClock");
+  if (el) el.textContent = timingState.active ? text : "0:00";
+  document.querySelectorAll("[data-timing-live]").forEach((node) => {
+    node.textContent = timingState.active ? text : "";
+  });
+}
+
+function ensureDailyTimerTick() {
+  if (timingState.active) {
+    startDailyTimerTick();
     return;
   }
-  el.textContent = formatElapsedMs(Date.now() - t0);
+  const dlg = document.getElementById("dailyTimerDialog");
+  if (dlg instanceof HTMLDialogElement && dlg.open) {
+    startDailyTimerTick();
+    return;
+  }
+  clearDailyTimerTick();
 }
 
 function syncDailyTimerDialogUI() {
@@ -2400,7 +2423,7 @@ function syncDailyTimerDialogUI() {
 
   if (!active) {
     meta.textContent =
-      "לחצי «התחלה» כשמתחילות לעבוד, ו«סיום ושמירה» כשסיימת — המשך יופיע במסך «תזמון».";
+      "לחצי «התחלה» כשמתחילות לעבוד, ו«סיום ושמירה» כשסיימת — המשך יופיע ב«משימות עם זמן».";
   } else if (runningHere) {
     const st = new Date(active.startedAt).toLocaleString("he-IL");
     meta.textContent = `התחלה: ${st}`;
@@ -2439,32 +2462,136 @@ function openDailyTimerDialog(dateKey, itemId) {
   dlg.showModal();
 }
 
-function renderDailyTimingPage() {
-  const root = document.getElementById("dailyTimingList");
-  if (!root) return;
-  root.innerHTML = "";
-  const entries = timingState.entries ?? [];
-  if (entries.length === 0) {
-    const div = document.createElement("div");
-    div.className = "empty";
-    div.innerHTML = UI_EMPTY;
-    root.appendChild(div);
-    return;
-  }
-  for (const e of entries) {
-    const st = new Date(e.startedAt).toLocaleString("he-IL");
-    const en = new Date(e.endedAt).toLocaleString("he-IL");
-    const art = document.createElement("article");
-    art.className = "timing-row";
-    art.setAttribute("role", "listitem");
-    art.innerHTML = `
-      <div class="timing-title">${escapeHtml(e.title)}</div>
-      <div class="timing-meta">יום במחברת: ${escapeHtml(e.dateKey)}</div>
-      <div class="timing-times">התחלה: ${escapeHtml(st)}<br/>סיום: ${escapeHtml(en)}</div>
-      <div class="timing-duration">משך: <strong>${escapeHtml(String(e.durationMinutes))}</strong> דק׳</div>
+function formatTimingStatsLine(st) {
+  if (!st?.count) return "עדיין אין מדידות";
+  const lastDay = st.lastDateKey ? ` · ${st.lastDateKey}` : "";
+  return `ממוצע ${formatMinutesShort(st.avgMinutes)} דק׳ · ${st.count} פעמים · אחרון ${formatMinutesShort(st.lastMinutes)} דק׳${lastDay}`;
+}
+
+function timingRunButtons(choreId, subId, itemId) {
+  const running = timingState.active?.itemId === itemId;
+  const otherRunning = !!(timingState.active && !running);
+  const cid = escapeHtml(choreId);
+  const sid = escapeHtml(subId || "");
+  if (running) {
+    return `
+      <span class="timing-live" data-timing-live>${escapeHtml(activeTimerElapsedText())}</span>
+      <button type="button" class="btn" data-action="chore-stop">סיום</button>
     `;
-    root.appendChild(art);
   }
+  return `
+    <button type="button" class="btn btn-ghost" data-action="chore-start" data-chore-id="${cid}" data-sub-id="${sid}" ${otherRunning ? "disabled" : ""}>התחלה</button>
+  `;
+}
+
+function renderDailyTimingPage() {
+  const catalog = document.getElementById("dailyTimingCatalog");
+  const history = document.getElementById("dailyTimingList");
+  if (!catalog || !history) return;
+  catalog.innerHTML = "";
+  history.innerHTML = "";
+
+  const chores = timingState.chores ?? [];
+  if (!chores.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty timing-empty-hint";
+    empty.textContent = "אין משימות בקטלוג — הוסיפי למעלה.";
+    catalog.appendChild(empty);
+  }
+
+  for (const chore of chores) {
+    const card = document.createElement("article");
+    card.className = "timing-chore";
+    card.setAttribute("role", "listitem");
+    const subs = chore.subs ?? [];
+    const hasSubs = subs.length > 0;
+    const parentId = choreItemId(chore.id);
+    const est = estimatedParentMinutes(timingState, chore);
+    const totalLine = hasSubs
+      ? est.avgMinutes != null
+        ? `בערך ${formatMinutesShort(est.avgMinutes)} דק׳ לכל המשימה (סכום ממוצעי השלבים)`
+        : "מדדי כל שלב — כאן יופיע כמה זמן לוקח בערך הכל ביחד"
+      : formatTimingStatsLine(statsForItem(timingState, parentId));
+
+    let body = "";
+    if (hasSubs) {
+      body = subs
+        .map((s) => {
+          const iid = choreItemId(chore.id, s.id);
+          const st = statsForItem(timingState, iid);
+          const running = timingState.active?.itemId === iid;
+          return `
+            <div class="timing-sub${running ? " timing-sub--running" : ""}">
+              <div class="timing-sub-main">
+                <div class="timing-sub-title">${escapeHtml(s.title)}</div>
+                <div class="timing-sub-stats">${escapeHtml(formatTimingStatsLine(st))}</div>
+              </div>
+              <div class="timing-sub-actions">
+                ${timingRunButtons(chore.id, s.id, iid)}
+                <button type="button" class="btn btn-ghost timing-mini-del" data-action="chore-delete-sub" data-chore-id="${escapeHtml(chore.id)}" data-sub-id="${escapeHtml(s.id)}" aria-label="מחיקת שלב">✕</button>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    } else {
+      const running = timingState.active?.itemId === parentId;
+      body = `
+        <div class="timing-sub timing-sub--solo${running ? " timing-sub--running" : ""}">
+          <div class="timing-sub-actions">
+            ${timingRunButtons(chore.id, "", parentId)}
+          </div>
+        </div>
+      `;
+    }
+
+    card.innerHTML = `
+      <div class="timing-chore-head">
+        <div>
+          <div class="timing-title">${escapeHtml(chore.title)}</div>
+          <div class="timing-meta">${escapeHtml(totalLine)}</div>
+        </div>
+        <details class="daily-kebab">
+          <summary class="daily-kebab-summary" aria-label="פעולות למשימה">⋮</summary>
+          <div class="daily-kebab-menu" role="menu">
+            <button type="button" class="daily-kebab-item daily-kebab-item--danger" role="menuitem" data-action="chore-delete" data-chore-id="${escapeHtml(chore.id)}">מחיקת משימה</button>
+          </div>
+        </details>
+      </div>
+      <div class="timing-subs">${body}</div>
+      <form class="add-row add-row--subtask timing-add-sub" data-timing-add-sub autocomplete="off">
+        <input type="hidden" name="choreId" value="${escapeHtml(chore.id)}" />
+        <input class="input" name="subTitle" type="text" maxlength="80" placeholder="שלב נוסף (למשל: חלונות)…" aria-label="שלב חדש ב${escapeHtml(chore.title)}" />
+        <button class="btn btn--subtask-add" type="submit">+ שלב</button>
+      </form>
+    `;
+    catalog.appendChild(card);
+  }
+
+  const entries = timingState.entries ?? [];
+  if (!entries.length) {
+    const div = document.createElement("div");
+    div.className = "empty timing-empty-hint";
+    div.textContent = "עדיין אין מדידות שמורות.";
+    history.appendChild(div);
+  } else {
+    for (const e of entries.slice(0, 40)) {
+      const st = new Date(e.startedAt).toLocaleString("he-IL");
+      const en = new Date(e.endedAt).toLocaleString("he-IL");
+      const art = document.createElement("article");
+      art.className = "timing-row";
+      art.setAttribute("role", "listitem");
+      art.innerHTML = `
+        <div class="timing-title">${escapeHtml(e.title)}</div>
+        <div class="timing-meta">${escapeHtml(e.dateKey)}</div>
+        <div class="timing-times">התחלה: ${escapeHtml(st)}<br/>סיום: ${escapeHtml(en)}</div>
+        <div class="timing-duration">משך: <strong>${escapeHtml(formatMinutesShort(e.durationMinutes))}</strong> דק׳</div>
+      `;
+      history.appendChild(art);
+    }
+  }
+
+  ensureDailyTimerTick();
 }
 
 /**
@@ -3834,7 +3961,9 @@ function wireDailyTimerDialog() {
   const btnClose = document.getElementById("dailyTimerCloseBtn");
   if (!dlg || !btnStart || !btnStop || !btnDiscard || !btnClose) return;
 
-  dlg.addEventListener("close", () => clearDailyTimerTick());
+  dlg.addEventListener("close", () => {
+    if (!timingState.active) clearDailyTimerTick();
+  });
 
   btnClose.addEventListener("click", () => {
     if (dlg instanceof HTMLDialogElement) dlg.close();
@@ -3978,6 +4107,34 @@ function wireGlobalHandlers() {
   wireDailyTimerDialog();
   wirePantryImportUI();
   wirePantryBarcodeUI();
+
+  document.getElementById("timingAddChoreForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const inp = document.getElementById("timingNewChoreTitle");
+    const t = String(inp?.value ?? "").trim();
+    if (!t) {
+      toast("נא להזין שם למשימה.");
+      return;
+    }
+    addChore(timingState, uid("chore"), t);
+    if (inp) inp.value = "";
+    render();
+  });
+
+  document.body.addEventListener("submit", (e) => {
+    const form = e.target?.closest?.("form[data-timing-add-sub]");
+    if (!form) return;
+    e.preventDefault();
+    const choreId = form.querySelector('[name="choreId"]')?.value;
+    const subTitle = String(form.querySelector('[name="subTitle"]')?.value ?? "").trim();
+    if (!choreId) return;
+    if (!subTitle) {
+      toast("נא להזין שם לשלב.");
+      return;
+    }
+    addChoreSub(timingState, choreId, uid("csub"), subTitle);
+    render();
+  });
 
   const settingsBtn = document.getElementById("settingsBtn");
   const settingsDialog = document.getElementById("settingsDialog");
@@ -4808,6 +4965,57 @@ function wireGlobalHandlers() {
       return;
     }
 
+    if (action === "chore-start") {
+      const choreId = btn.getAttribute("data-chore-id");
+      const subId = btn.getAttribute("data-sub-id") || "";
+      if (!choreId) return;
+      if (timingState.active) {
+        toast("כבר רץ טיימר — סיימי אותו קודם.");
+        return;
+      }
+      const itemId = choreItemId(choreId, subId || null);
+      startDayItemTimer(timingState, {
+        dateKey: localDateKey(),
+        itemId,
+        title: choreLabel(timingState, choreId, subId || null),
+      });
+      render();
+      toast("הטיימר רץ.");
+      return;
+    }
+
+    if (action === "chore-stop") {
+      if (!timingState.active) return;
+      const ent = stopDayItemTimer(timingState);
+      render();
+      if (ent) toast(`נשמר: ${formatMinutesShort(ent.durationMinutes)} דק׳`);
+      return;
+    }
+
+    if (action === "chore-delete") {
+      const choreId = btn.getAttribute("data-chore-id");
+      if (!choreId) return;
+      const kab = btn.closest("details.daily-kebab");
+      if (kab) kab.open = false;
+      const title = choreLabel(timingState, choreId);
+      const ok = confirm(`למחוק את «${title}» מהקטלוג? המדידות שנשמרו יישארו בהיסטוריה.`);
+      if (!ok) return;
+      deleteChore(timingState, choreId);
+      render();
+      return;
+    }
+
+    if (action === "chore-delete-sub") {
+      const choreId = btn.getAttribute("data-chore-id");
+      const subId = btn.getAttribute("data-sub-id");
+      if (!choreId || !subId) return;
+      const ok = confirm("למחוק את השלב מהקטלוג?");
+      if (!ok) return;
+      deleteChoreSub(timingState, choreId, subId);
+      render();
+      return;
+    }
+
     if (action === "pantry-consume") {
       const id = btn.getAttribute("data-item-id");
       if (!id) return;
@@ -5134,6 +5342,7 @@ function render() {
 
   const timerDlg = document.getElementById("dailyTimerDialog");
   if (timerDlg instanceof HTMLDialogElement && timerDlg.open) syncDailyTimerDialogUI();
+  ensureDailyTimerTick();
 
   applyMobileLayout();
 

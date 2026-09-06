@@ -56,7 +56,7 @@
 
             <div class="top-menu-list-header">ארכיון</div>
             <button id="topNavDailyMaster" class="top-menu-list-item" type="button">כל הימים</button>
-            <button id="topNavTiming" class="top-menu-list-item" type="button">מדידות זמן</button>
+            <button id="topNavTiming" class="top-menu-list-item" type="button">משימות עם זמן</button>
 
             <div class="top-menu-list-header">אפליקציה</div>
             <button id="exportPdfBtn" class="top-menu-list-item" type="button" title="כל הרעיונות והיומן היומי">ייצוא PDF (מלא)</button>
@@ -687,11 +687,20 @@
       </div>
     </section>
 
-    <section id="viewDailyTiming" class="daily-page hidden" aria-label="מדידות זמן">
+    <section id="viewDailyTiming" class="daily-page hidden" aria-label="משימות עם זמן">
       <div class="daily-inner">
         <div class="panel-header daily-header">
-          <div class="panel-title">מדידות זמן</div>
+          <div class="panel-title">משימות עם זמן</div>
         </div>
+        <p class="timing-intro">
+          מדידה של אותה משימה בימים שונים — כאן רואים ממוצע. משימה עם שלבים (כמו ניקיון סלון) נמדדת לכל שלב בנפרד; משימה בלי שלבים (כמו שירותים) נמדדת כשורה אחת.
+        </p>
+        <form id="timingAddChoreForm" class="add-row timing-add-chore" autocomplete="off">
+          <input id="timingNewChoreTitle" class="input" type="text" maxlength="80" placeholder="משימה חדשה…" aria-label="שם משימה חדשה" />
+          <button class="btn" type="submit">הוספה</button>
+        </form>
+        <div id="dailyTimingCatalog" class="timing-catalog" role="list"></div>
+        <div class="timing-history-head">היסטוריה אחרונה</div>
         <div id="dailyTimingList" class="timing-list" role="list"></div>
       </div>
     </section>
