@@ -2781,6 +2781,32 @@ body.app-mode-home .top-menu-dialog{
   border-bottom: 1px solid var(--border-soft);
 }
 .lunch-dish-row:last-child{ border-bottom: none; }
+.lunch-recipes-toolbar{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 4px 12px;
+}
+.lunch-recipes-hint{
+  margin: 0;
+  flex: 1 1 12rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.lunch-recipes-empty{
+  padding: 16px 8px 8px;
+  color: var(--muted);
+}
+.lunch-recipe-dish-sel-wrap{
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin: 8px 0;
+}
 .lunch-recipes-list{
   display: flex;
   flex-direction: column;

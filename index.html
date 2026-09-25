@@ -592,8 +592,14 @@
 
     <dialog id="lunchRecipeDialog" class="dialog dialog--wide">
       <form method="dialog" class="dialog-inner" id="lunchRecipeForm">
-        <div class="dialog-title">מתכון למנה</div>
+        <div class="dialog-title" id="lunchRecipeDialogTitle">מתכון</div>
         <div id="lunchRecipeDishLine" class="dialog-text"></div>
+        <label id="lunchRecipeDishSelWrap" class="checkline lunch-recipe-dish-sel-wrap hidden">
+          לאיזו מנה זה שייך
+          <select id="lunchRecipeDishSel" class="select" aria-label="מנה למתכון">
+            <option value="">מנה חדשה — לפי שם המתכון</option>
+          </select>
+        </label>
         <input id="lunchRecipeTitle" class="input" type="text" maxlength="120" placeholder="שם המתכון…" />
         <textarea id="lunchRecipeBody" class="textarea" rows="12" placeholder="שלבים, מצרכים, הערות…"></textarea>
         <div class="dialog-actions">
@@ -688,6 +694,10 @@
         </div>
 
         <div id="lunchPanelRecipes" class="lunch-panel hidden" role="tabpanel">
+          <div class="lunch-recipes-toolbar">
+            <p class="lunch-recipes-hint">כאן שומרים מתכונים. אפשר מנה חדשה או לקשור למנה מ«מנות שלי».</p>
+            <button type="button" id="lunchRecipesAddBtn" class="btn">הוספת מתכון</button>
+          </div>
           <div id="lunchRecipesList" class="lunch-recipes-list" role="list"></div>
         </div>
       </div>
