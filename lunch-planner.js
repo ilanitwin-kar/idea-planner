@@ -102,7 +102,9 @@ export function loadLunchPlanner() {
       homeStock,
       stockCategories,
       dishes: Array.isArray(parsed.dishes) ? parsed.dishes.filter((d) => d?.id && d?.name) : [],
-      recipes: Array.isArray(parsed.recipes) ? parsed.recipes.filter((r) => r?.id) : [],
+      recipes: Array.isArray(parsed.recipes)
+        ? parsed.recipes.map(sanitizeRecipe).filter(Boolean)
+        : [],
       weeks: parsed.weeks && typeof parsed.weeks === "object" ? { ...parsed.weeks } : {},
     };
   } catch {
@@ -154,6 +156,23 @@ export function planEntriesForDay(state, weekStartKey, dateKey) {
   const w = state.weeks[weekStartKey];
   const arr = w?.days?.[dateKey];
   return Array.isArray(arr) ? arr : [];
+}
+
+function sanitizeRecipe(r) {
+  if (!r || typeof r !== "object" || !r.id) return null;
+  const title = String(r.title ?? "").trim();
+  if (!title) return null;
+  let steps = String(r.steps ?? "").trim();
+  const body = String(r.body ?? "").trim();
+  if (!steps && body) steps = body;
+  return {
+    id: String(r.id),
+    title,
+    dishId: r.dishId ? String(r.dishId) : "",
+    ingredients: String(r.ingredients ?? "").trim(),
+    steps,
+    notes: String(r.notes ?? ""),
+  };
 }
 
 export function findDish(state, dishId) {
@@ -425,32 +444,89 @@ export function deleteDish(state, dishId) {
     }
   }
   state.dishes = state.dishes.filter((d) => d.id !== dishId);
-  state.recipes = state.recipes.filter((r) => r.dishId !== dishId);
+  for (const rec of state.recipes) {
+    if (rec.dishId === dishId) rec.dishId = "";
+  }
 }
 
 export function getRecipeForDish(state, dishId) {
+  if (!dishId) return null;
   return state.recipes.find((r) => r.dishId === dishId) ?? null;
 }
 
-export function upsertRecipeForDish(state, recipeId, dishId, title, body) {
-  const t = String(title ?? "").trim();
-  const b = String(body ?? "").trim();
-  if (!dishId || !t) return null;
-  let rec = state.recipes.find((r) => r.dishId === dishId);
-  if (rec) {
-    rec.title = t;
-    rec.body = b;
-    return rec;
+export function findRecipe(state, recipeId) {
+  return (state.recipes ?? []).find((r) => r.id === recipeId) ?? null;
+}
+
+export function recipeMatchesQuery(recipe, query, dishName = "") {
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return true;
+  const tokens = q.split(/\s+/).filter(Boolean);
+  const hay = [recipe.title, recipe.ingredients, recipe.steps, recipe.notes, dishName]
+    .join("\n")
+    .toLowerCase();
+  return tokens.every((t) => hay.includes(t));
+}
+
+export function recipePlainText(recipe, dishName = "") {
+  const lines = [recipe.title || "מתכון"];
+  if (dishName) lines.push(`מנה: ${dishName}`);
+  lines.push("");
+  if (recipe.ingredients) {
+    lines.push("מצרכים:", recipe.ingredients, "");
   }
-  rec = {
-    id: recipeId,
-    dishId,
-    title: t,
-    body: b,
-  };
-  state.recipes.push(rec);
+  if (recipe.steps) {
+    lines.push("אופן הכנה:", recipe.steps, "");
+  }
+  if (String(recipe.notes ?? "").trim()) {
+    lines.push("הערות אישיות:", String(recipe.notes).trim());
+  }
+  return lines.join("\n").trim();
+}
+
+export function upsertRecipe(state, { id, dishId, title, ingredients, steps, notes }) {
+  const t = String(title ?? "").trim();
+  if (!t) return null;
+  if (!Array.isArray(state.recipes)) state.recipes = [];
+  const patch = { title: t };
+  if (dishId !== undefined) patch.dishId = dishId ? String(dishId) : "";
+  if (ingredients !== undefined) patch.ingredients = String(ingredients).trim();
+  if (steps !== undefined) patch.steps = String(steps).trim();
+  if (notes !== undefined) patch.notes = String(notes);
+
+  let rec = id ? state.recipes.find((r) => r.id === id) : null;
+  if (!rec && patch.dishId) rec = state.recipes.find((r) => r.dishId === patch.dishId);
+  if (rec) {
+    Object.assign(rec, patch);
+  } else {
+    rec = {
+      id: id || `lrec_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`,
+      dishId: patch.dishId ?? "",
+      ingredients: patch.ingredients ?? "",
+      steps: patch.steps ?? "",
+      notes: patch.notes ?? "",
+      title: t,
+    };
+    state.recipes.push(rec);
+  }
   state.recipes.sort((a, b) => a.title.localeCompare(b.title, "he"));
   return rec;
+}
+
+export function upsertRecipeForDish(state, recipeId, dishId, title, body) {
+  return upsertRecipe(state, {
+    id: recipeId,
+    dishId,
+    title,
+    steps: body,
+  });
+}
+
+export function updateRecipeNotes(state, recipeId, notes) {
+  const rec = findRecipe(state, recipeId);
+  if (!rec) return false;
+  rec.notes = String(notes ?? "");
+  return true;
 }
 
 export function deleteRecipe(state, recipeId) {

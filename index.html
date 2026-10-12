@@ -54,6 +54,9 @@
               <button id="topNavHistory" class="top-menu-list-item top-menu-list-item--half journal-top-btn" type="button">שבוצע</button>
             </div>
 
+            <div class="top-menu-list-header">בית</div>
+            <button id="topNavRecipes" class="top-menu-list-item" type="button">מתכונים</button>
+
             <div class="top-menu-list-header">ארכיון</div>
             <button id="topNavDailyMaster" class="top-menu-list-item" type="button">כל הימים</button>
             <button id="topNavTiming" class="top-menu-list-item" type="button">משימות עם זמן</button>
@@ -594,14 +597,22 @@
       <form method="dialog" class="dialog-inner" id="lunchRecipeForm">
         <div class="dialog-title" id="lunchRecipeDialogTitle">מתכון</div>
         <div id="lunchRecipeDishLine" class="dialog-text"></div>
-        <label id="lunchRecipeDishSelWrap" class="checkline lunch-recipe-dish-sel-wrap hidden">
-          לאיזו מנה זה שייך
+        <label id="lunchRecipeDishSelWrap" class="checkline lunch-recipe-dish-sel-wrap">
+          קישור למנה מ«מנות שלי» (אופציונלי)
           <select id="lunchRecipeDishSel" class="select" aria-label="מנה למתכון">
-            <option value="">מנה חדשה — לפי שם המתכון</option>
+            <option value="">בלי קישור למנה</option>
           </select>
         </label>
         <input id="lunchRecipeTitle" class="input" type="text" maxlength="120" placeholder="שם המתכון…" />
-        <textarea id="lunchRecipeBody" class="textarea" rows="12" placeholder="שלבים, מצרכים, הערות…"></textarea>
+        <label class="checkline">מצרכים
+          <textarea id="lunchRecipeIngredients" class="textarea" rows="6" placeholder="שורה לכל מצרך…"></textarea>
+        </label>
+        <label class="checkline">אופן הכנה
+          <textarea id="lunchRecipeSteps" class="textarea" rows="8" placeholder="שלבים…"></textarea>
+        </label>
+        <label class="checkline">הערות אישיות
+          <textarea id="lunchRecipeNotes" class="textarea" rows="3" placeholder="מה שינית, מה אהבת, טיפים…"></textarea>
+        </label>
         <div class="dialog-actions">
           <button id="lunchRecipeSave" class="btn" type="button">שמירה במאגר מתכונים</button>
           <button id="lunchRecipeDelete" class="btn btn-ghost hourly-edit-delete hidden" type="button">מחיקת מתכון</button>
@@ -672,7 +683,6 @@
           <button type="button" class="tab lunch-tab active" data-lunch-tab="week" role="tab" aria-selected="true">שבוע</button>
           <button type="button" class="tab lunch-tab" data-lunch-tab="stock" role="tab" aria-selected="false">מלאי בית</button>
           <button type="button" class="tab lunch-tab" data-lunch-tab="dishes" role="tab" aria-selected="false">מנות שלי</button>
-          <button type="button" class="tab lunch-tab" data-lunch-tab="recipes" role="tab" aria-selected="false">מתכונים</button>
         </div>
 
         <div id="lunchPanelWeek" class="lunch-panel" role="tabpanel">
@@ -692,14 +702,27 @@
         <div id="lunchPanelDishes" class="lunch-panel hidden" role="tabpanel">
           <div id="lunchDishesList" class="list lunch-dishes-list" role="list"></div>
         </div>
+      </div>
+    </section>
 
-        <div id="lunchPanelRecipes" class="lunch-panel hidden" role="tabpanel">
-          <div class="lunch-recipes-toolbar">
-            <p class="lunch-recipes-hint">כאן שומרים מתכונים. אפשר מנה חדשה או לקשור למנה מ«מנות שלי».</p>
-            <button type="button" id="lunchRecipesAddBtn" class="btn">הוספת מתכון</button>
-          </div>
-          <div id="lunchRecipesList" class="lunch-recipes-list" role="list"></div>
+    <section id="viewRecipes" class="daily-page hidden" aria-label="מתכונים">
+      <div class="daily-inner">
+        <div class="panel-header daily-header">
+          <div class="panel-title">מתכונים</div>
         </div>
+        <div class="recipes-toolbar">
+          <input
+            id="recipesSearch"
+            class="input"
+            type="search"
+            maxlength="120"
+            placeholder="חיפוש בשם, מצרכים, הכנה או הערות…"
+            aria-label="חיפוש מתכונים"
+            autocomplete="off"
+          />
+          <button type="button" id="recipesAddBtn" class="btn">הוספת מתכון</button>
+        </div>
+        <div id="recipesList" class="recipes-list" role="list"></div>
       </div>
     </section>
 

@@ -118,10 +118,13 @@ import {
   updatePlanEntryDish,
   deleteDish,
   findDish,
-  findOrCreateDish,
+  findRecipe,
   getRecipeForDish,
-  upsertRecipeForDish,
+  upsertRecipe,
+  updateRecipeNotes,
   deleteRecipe,
+  recipeMatchesQuery,
+  recipePlainText,
 } from "./lunch-planner.js";
 
 const APP_DISPLAY_NAME = "מרכז הרעיונות של אילנית";
@@ -479,6 +482,7 @@ const APP_MODES = [
   "pantry",
   "hourly-schedule",
   "lunch-planner",
+  "recipes",
 ];
 
 const APP_MODE_ALIASES = {
@@ -608,11 +612,12 @@ let lunchPlanner = loadLunchPlanner();
 let lunchBrowseWeekStart = weekStartKeyFromDateKey(localDateKey());
 
 const LUNCH_PLANNER_TAB_KEY = "idea-planner:lunch-tab:v1";
-const LUNCH_PLANNER_TABS = ["week", "stock", "dishes", "recipes"];
+const LUNCH_PLANNER_TABS = ["week", "stock", "dishes"];
 
 function loadLunchPlannerTab() {
   try {
     const v = localStorage.getItem(LUNCH_PLANNER_TAB_KEY);
+    if (v === "recipes") return "week";
     if (LUNCH_PLANNER_TABS.includes(v)) return v;
   } catch {
     /* ignore */
@@ -621,6 +626,8 @@ function loadLunchPlannerTab() {
 }
 
 let lunchPlannerTab = loadLunchPlannerTab();
+let recipesSearchQuery = "";
+const recipesOpenIds = new Set();
 /** רכיבים שטרם אוחדו למנה — לפי מפתח יום (תכנון שבוע) */
 let lunchDayDraftParts = {};
 
@@ -1018,6 +1025,8 @@ function screenTitleForMode(mode) {
       return "כל הימים";
     case "timing":
       return "משימות עם זמן";
+    case "recipes":
+      return "מתכונים";
     case "daily-future":
       return "בהמשך";
     case "daily-history":
@@ -1075,6 +1084,7 @@ function syncAppNavActive() {
     ["daily-history", "topNavHistory"],
     ["daily-master", "topNavDailyMaster"],
     ["timing", "topNavTiming"],
+    ["recipes", "topNavRecipes"],
   ];
   for (const [m, id] of pairs) {
     document.getElementById(id)?.classList.toggle("active", appMode === m);
@@ -1093,6 +1103,7 @@ function updateAppViewsVisibility() {
   document.getElementById("viewPantry")?.classList.toggle("hidden", appMode !== "pantry");
   document.getElementById("viewHourlySchedule")?.classList.toggle("hidden", appMode !== "hourly-schedule");
   document.getElementById("viewLunchPlanner")?.classList.toggle("hidden", appMode !== "lunch-planner");
+  document.getElementById("viewRecipes")?.classList.toggle("hidden", appMode !== "recipes");
   syncHeaderScreenTitle();
   syncHomeTabsBar();
 }
@@ -1556,7 +1567,7 @@ function setLunchPlannerTab(tab) {
     el.classList.toggle("active", on);
     el.setAttribute("aria-selected", on ? "true" : "false");
   });
-  for (const id of ["Week", "Stock", "Dishes", "Recipes"]) {
+  for (const id of ["Week", "Stock", "Dishes"]) {
     const key = id.toLowerCase();
     document.getElementById(`lunchPanel${id}`)?.classList.toggle("hidden", lunchPlannerTab !== key);
   }
@@ -1568,7 +1579,7 @@ function fillLunchRecipeDishSelect(selectedId) {
   const dishes = [...(lunchPlanner.dishes ?? [])].sort((a, b) =>
     String(a.name).localeCompare(String(b.name), "he"),
   );
-  sel.innerHTML = `<option value="">מנה חדשה — לפי שם המתכון</option>${dishes
+  sel.innerHTML = `<option value="">בלי קישור למנה</option>${dishes
     .map(
       (d) =>
         `<option value="${escapeHtml(d.id)}"${d.id === selectedId ? " selected" : ""}>${escapeHtml(dishLabelForSelect(d))}</option>`,
@@ -1576,44 +1587,76 @@ function fillLunchRecipeDishSelect(selectedId) {
     .join("")}`;
 }
 
-function setLunchRecipeDialogMode(mode, dishId) {
-  const dlg = document.getElementById("lunchRecipeDialog");
-  const wrap = document.getElementById("lunchRecipeDishSelWrap");
-  const titleEl = document.getElementById("lunchRecipeDialogTitle");
-  if (dlg instanceof HTMLDialogElement) dlg.dataset.mode = mode;
-  wrap?.classList.toggle("hidden", mode !== "new");
-  if (titleEl) titleEl.textContent = mode === "new" ? "מתכון חדש" : "מתכון למנה";
-  if (mode === "new") fillLunchRecipeDishSelect(dishId || "");
+function openLunchNewRecipeDialog() {
+  openRecipeEditor({});
 }
 
-function openLunchNewRecipeDialog() {
+function openLunchRecipeDialog(dishId) {
+  const rec = getRecipeForDish(lunchPlanner, dishId);
+  if (rec) {
+    recipesOpenIds.add(rec.id);
+    setAppMode("recipes");
+    return;
+  }
+  const dish = findDish(lunchPlanner, dishId);
+  openRecipeEditor({ dishId, title: dish?.name ?? "" });
+}
+
+function openRecipeEditor({ recipeId = "", dishId = "", title = "" } = {}) {
   const dlg = document.getElementById("lunchRecipeDialog");
   if (!(dlg instanceof HTMLDialogElement)) return;
-  dlg.dataset.dishId = "";
-  setLunchRecipeDialogMode("new", "");
-  document.getElementById("lunchRecipeDishLine").textContent =
-    "בחרי מנה קיימת, או השאירי «מנה חדשה» וכתבי את השם בשדה למטה.";
-  document.getElementById("lunchRecipeTitle").value = "";
-  document.getElementById("lunchRecipeBody").value = "";
-  document.getElementById("lunchRecipeDelete")?.classList.add("hidden");
+  const rec = recipeId ? findRecipe(lunchPlanner, recipeId) : dishId ? getRecipeForDish(lunchPlanner, dishId) : null;
+  const linkedDishId = rec?.dishId || dishId || "";
+  fillLunchRecipeDishSelect(linkedDishId);
+  dlg.dataset.recipeId = rec?.id ?? "";
+  dlg.dataset.dishId = linkedDishId;
+  const titleEl = document.getElementById("lunchRecipeDialogTitle");
+  if (titleEl) titleEl.textContent = rec ? "עריכת מתכון" : "מתכון חדש";
+  const dish = linkedDishId ? findDish(lunchPlanner, linkedDishId) : null;
+  document.getElementById("lunchRecipeDishLine").textContent = rec
+    ? "אפשר לערוך מצרכים, אופן הכנה והערות."
+    : dish
+      ? `מתכון חדש למנה: ${dish.name}`
+      : "מלאי שם, מצרכים ואופן הכנה. קישור למנה הוא אופציונלי.";
+  document.getElementById("lunchRecipeTitle").value = rec?.title || title || dish?.name || "";
+  document.getElementById("lunchRecipeIngredients").value = rec?.ingredients ?? "";
+  document.getElementById("lunchRecipeSteps").value = rec?.steps ?? rec?.body ?? "";
+  document.getElementById("lunchRecipeNotes").value = rec?.notes ?? "";
+  document.getElementById("lunchRecipeDelete")?.classList.toggle("hidden", !rec);
   dlg.showModal();
   queueMicrotask(() => document.getElementById("lunchRecipeTitle")?.focus());
 }
 
-function openLunchRecipeDialog(dishId) {
-  const dish = findDish(lunchPlanner, dishId);
-  if (!dish) return;
-  const dlg = document.getElementById("lunchRecipeDialog");
-  if (!(dlg instanceof HTMLDialogElement)) return;
-  const rec = getRecipeForDish(lunchPlanner, dishId);
-  setLunchRecipeDialogMode("edit", dishId);
-  document.getElementById("lunchRecipeDishLine").textContent = `מנה: ${dish.name}`;
-  document.getElementById("lunchRecipeTitle").value = rec?.title ?? dish.name;
-  document.getElementById("lunchRecipeBody").value = rec?.body ?? "";
-  dlg.dataset.dishId = dishId;
-  document.getElementById("lunchRecipeDelete")?.classList.toggle("hidden", !rec);
-  dlg.showModal();
-  queueMicrotask(() => document.getElementById("lunchRecipeBody")?.focus());
+function recipeBlockHtml(label, text) {
+  const t = String(text ?? "").trim();
+  if (!t) return "";
+  return `<div class="recipe-block"><div class="recipe-block-label">${escapeHtml(label)}</div><div class="recipe-block-body">${escapeHtml(t)}</div></div>`;
+}
+
+async function copyRecipeToClipboard(recipe) {
+  const dish = recipe.dishId ? findDish(lunchPlanner, recipe.dishId) : null;
+  const text = recipePlainText(recipe, dish ? dishLabelForSelect(dish) : "");
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("המתכון הועתק.");
+    return;
+  } catch {
+    /* fallback */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.insetInlineStart = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+    toast("המתכון הועתק.");
+  } catch {
+    toast("לא הצלחתי להעתיק — העתיקי ידנית.");
+  }
 }
 
 function openLunchTextEditDialog(opts) {
@@ -2154,7 +2197,7 @@ function renderLunchDishesPanel() {
         </div>
         <span class="lunch-dish-row-actions">
           <button type="button" class="btn btn-ghost" data-action="lunch-edit-dish" data-dish-id="${escapeHtml(d.id)}">עריכה</button>
-          <button type="button" class="btn btn-ghost" data-action="lunch-recipe" data-dish-id="${escapeHtml(d.id)}">${hasRec ? "עריכת מתכון" : "מתכון"}</button>
+          <button type="button" class="btn btn-ghost" data-action="lunch-recipe" data-dish-id="${escapeHtml(d.id)}">${hasRec ? "למתכון" : "מתכון חדש"}</button>
           <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="lunch-delete-dish" data-dish-id="${escapeHtml(d.id)}">מחיקה</button>
         </span>
       </div>`;
@@ -2162,24 +2205,50 @@ function renderLunchDishesPanel() {
     .join("");
 }
 
-function renderLunchRecipesPanel() {
-  const root = document.getElementById("lunchRecipesList");
+function renderRecipesPage() {
+  const root = document.getElementById("recipesList");
+  const searchEl = document.getElementById("recipesSearch");
+  if (searchEl && searchEl.value !== recipesSearchQuery) searchEl.value = recipesSearchQuery;
   if (!root) return;
-  if (!lunchPlanner.recipes.length) {
-    root.innerHTML = `<div class="empty lunch-recipes-empty">עדיין אין מתכונים — לחצי «הוספת מתכון» למעלה.</div>`;
+  const list = [...(lunchPlanner.recipes ?? [])];
+  const filtered = list.filter((r) => {
+    const dish = r.dishId ? findDish(lunchPlanner, r.dishId) : null;
+    return recipeMatchesQuery(r, recipesSearchQuery, dish ? dishLabelForSelect(dish) : "");
+  });
+  if (!list.length) {
+    root.innerHTML = `<div class="empty recipes-empty">עדיין אין מתכונים — לחצי «הוספת מתכון».</div>`;
     return;
   }
-  root.innerHTML = lunchPlanner.recipes
+  if (!filtered.length) {
+    root.innerHTML = `<div class="empty recipes-empty">אין תוצאות לחיפוש.</div>`;
+    return;
+  }
+  root.innerHTML = filtered
     .map((r) => {
-      const dish = findDish(lunchPlanner, r.dishId);
-      return `<article class="lunch-recipe-card" role="listitem">
-        <div class="lunch-recipe-card-title">${escapeHtml(r.title)}</div>
-        <div class="lunch-recipe-card-dish">מנה: ${escapeHtml(dish?.name ?? "—")}</div>
-        <div class="lunch-recipe-card-body">${escapeHtml(r.body)}</div>
-        <div class="dialog-actions dialog-actions--wrap" style="margin-top:10px">
-          <button type="button" class="btn btn-ghost" data-action="lunch-recipe" data-dish-id="${escapeHtml(r.dishId)}">עריכה</button>
+      const dish = r.dishId ? findDish(lunchPlanner, r.dishId) : null;
+      const dishLine = dish ? `<div class="recipe-card-dish">מנה: ${escapeHtml(dishLabelForSelect(dish))}</div>` : "";
+      const open = recipesOpenIds.has(r.id);
+      const body =
+        recipeBlockHtml("מצרכים", r.ingredients) +
+        recipeBlockHtml("אופן הכנה", r.steps) +
+        (!r.ingredients && !r.steps ? `<div class="recipe-block-empty">עדיין בלי מצרכים או אופן הכנה — לחצי עריכה.</div>` : "");
+      return `<details class="recipe-card" data-recipe-id="${escapeHtml(r.id)}" ${open ? "open" : ""} role="listitem">
+        <summary class="recipe-card-summary">
+          <span class="recipe-card-title">${escapeHtml(r.title)}</span>
+          ${dishLine}
+        </summary>
+        <div class="recipe-card-body">
+          ${body}
+          <label class="checkline recipe-notes-label">הערות אישיות
+            <textarea class="textarea recipe-notes-input" rows="3" maxlength="800" data-recipe-notes="${escapeHtml(r.id)}" placeholder="מה שינית, מה אהבת, טיפים…">${escapeHtml(r.notes ?? "")}</textarea>
+          </label>
+          <div class="recipe-card-actions">
+            <button type="button" class="btn" data-action="recipe-copy" data-recipe-id="${escapeHtml(r.id)}">העתקה</button>
+            <button type="button" class="btn btn-ghost" data-action="recipe-edit" data-recipe-id="${escapeHtml(r.id)}">עריכה</button>
+            <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="recipe-delete" data-recipe-id="${escapeHtml(r.id)}">מחיקה</button>
+          </div>
         </div>
-      </article>`;
+      </details>`;
     })
     .join("");
 }
@@ -2189,7 +2258,6 @@ function renderLunchPlannerPage() {
   renderLunchWeekPanel();
   renderLunchStockPanel();
   renderLunchDishesPanel();
-  renderLunchRecipesPanel();
 }
 
 function addLunchPlanForDay(dateKey, partsRaw) {
@@ -4524,6 +4592,7 @@ function wireGlobalHandlers() {
   bindAppMode("topNavHistory", "daily-history");
   bindAppMode("topNavDailyMaster", "daily-master");
   bindAppMode("topNavTiming", "timing");
+  bindAppMode("topNavRecipes", "recipes");
   document.getElementById("bnHome")?.addEventListener("click", () => setAppMode(homeTabToMode()));
   document.getElementById("homeTabLunch")?.addEventListener("click", () => setHomeTab("lunch"));
   document.getElementById("homeTabPantry")?.addEventListener("click", () => setHomeTab("pantry"));
@@ -4703,48 +4772,89 @@ function wireGlobalHandlers() {
     }
   });
 
-  document.getElementById("lunchRecipesAddBtn")?.addEventListener("click", () => {
-    openLunchNewRecipeDialog();
+  document.getElementById("recipesAddBtn")?.addEventListener("click", () => {
+    openRecipeEditor({});
+  });
+  document.getElementById("recipesSearch")?.addEventListener("input", (e) => {
+    recipesSearchQuery = String(e.target?.value ?? "");
+    renderRecipesPage();
+  });
+  document.getElementById("viewRecipes")?.addEventListener("toggle", (e) => {
+    const card = e.target?.closest?.("details.recipe-card");
+    if (!card || e.target !== card) return;
+    const id = card.getAttribute("data-recipe-id");
+    if (!id) return;
+    if (card.open) recipesOpenIds.add(id);
+    else recipesOpenIds.delete(id);
+  }, true);
+  document.getElementById("viewRecipes")?.addEventListener("click", (e) => {
+    const copyBtn = e.target.closest("[data-action='recipe-copy']");
+    if (copyBtn?.dataset.recipeId) {
+      const rec = findRecipe(lunchPlanner, copyBtn.dataset.recipeId);
+      if (rec) void copyRecipeToClipboard(rec);
+      return;
+    }
+    const editBtn = e.target.closest("[data-action='recipe-edit']");
+    if (editBtn?.dataset.recipeId) {
+      openRecipeEditor({ recipeId: editBtn.dataset.recipeId });
+      return;
+    }
+    const delBtn = e.target.closest("[data-action='recipe-delete']");
+    if (delBtn?.dataset.recipeId) {
+      const rec = findRecipe(lunchPlanner, delBtn.dataset.recipeId);
+      if (!rec) return;
+      if (!confirm(`למחוק את המתכון «${rec.title}»?`)) return;
+      deleteRecipe(lunchPlanner, rec.id);
+      recipesOpenIds.delete(rec.id);
+      persistLunchPlanner();
+      render();
+      toast("המתכון נמחק.");
+    }
+  });
+  document.getElementById("viewRecipes")?.addEventListener("change", (e) => {
+    const ta = e.target?.closest?.("[data-recipe-notes]");
+    if (!ta) return;
+    const id = ta.getAttribute("data-recipe-notes");
+    if (!id) return;
+    updateRecipeNotes(lunchPlanner, id, ta.value);
+    persistLunchPlanner();
   });
 
   document.getElementById("lunchRecipeSave")?.addEventListener("click", () => {
     const dlg = document.getElementById("lunchRecipeDialog");
     if (!(dlg instanceof HTMLDialogElement)) return;
     const title = document.getElementById("lunchRecipeTitle")?.value?.trim();
-    const body = document.getElementById("lunchRecipeBody")?.value ?? "";
     if (!title) {
       toast("נא שם למתכון.");
       return;
     }
-    let dishId = dlg.dataset.dishId;
-    if (!dishId) {
-      const picked = document.getElementById("lunchRecipeDishSel")?.value;
-      if (picked) {
-        dishId = picked;
-      } else {
-        const created = findOrCreateDish(lunchPlanner, title);
-        dishId = created?.dish?.id ?? "";
-      }
-    }
-    if (!dishId) {
-      toast("נא שם למתכון.");
-      return;
-    }
-    upsertRecipeForDish(lunchPlanner, uid("lrec"), dishId, title, body);
+    const picked = document.getElementById("lunchRecipeDishSel")?.value || "";
+    const saved = upsertRecipe(lunchPlanner, {
+      id: dlg.dataset.recipeId || uid("lrec"),
+      dishId: picked,
+      title,
+      ingredients: document.getElementById("lunchRecipeIngredients")?.value ?? "",
+      steps: document.getElementById("lunchRecipeSteps")?.value ?? "",
+      notes: document.getElementById("lunchRecipeNotes")?.value ?? "",
+    });
     persistLunchPlanner();
     dlg.close();
+    if (saved?.id) recipesOpenIds.add(saved.id);
     toast("מתכון נשמר.");
-    render();
+    if (appMode !== "recipes") setAppMode("recipes");
+    else render();
   });
 
   document.getElementById("lunchRecipeDelete")?.addEventListener("click", () => {
     const dlg = document.getElementById("lunchRecipeDialog");
     if (!(dlg instanceof HTMLDialogElement)) return;
-    const dishId = dlg.dataset.dishId;
-    const rec = dishId ? getRecipeForDish(lunchPlanner, dishId) : null;
+    const rec =
+      (dlg.dataset.recipeId ? findRecipe(lunchPlanner, dlg.dataset.recipeId) : null) ||
+      (dlg.dataset.dishId ? getRecipeForDish(lunchPlanner, dlg.dataset.dishId) : null);
     if (!rec) return;
     if (!confirm("למחוק את המתכון?")) return;
     deleteRecipe(lunchPlanner, rec.id);
+    recipesOpenIds.delete(rec.id);
     persistLunchPlanner();
     dlg.close();
     render();
@@ -5612,6 +5722,7 @@ function render() {
   if (appMode === "pantry") renderPantryPage();
   if (appMode === "hourly-schedule") renderHourlySchedulePage();
   if (appMode === "lunch-planner") renderLunchPlannerPage();
+  if (appMode === "recipes") renderRecipesPage();
 
   const timerDlg = document.getElementById("dailyTimerDialog");
   if (timerDlg instanceof HTMLDialogElement && timerDlg.open) syncDailyTimerDialogUI();
