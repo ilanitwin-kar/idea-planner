@@ -78,6 +78,7 @@ import {
   blockHasTime,
   scheduleDayProgress,
   minutesToTimeString,
+  formatBlockTimeRange,
   DAY_WINDOWS,
   WORK_LANE,
   workBlocksForDay,
@@ -1352,9 +1353,9 @@ function renderDailyTodayPage() {
       const planKey = planDateKeyNow();
       const nn = nowAndNextOnDay(hourlySchedule, planKey, planMinutesNow());
       const bits = [];
-      if (nn.current) bits.push(`עכשיו: ${nn.current.title} · ${minutesToTimeString(nn.current.startMin)}`);
+      if (nn.current) bits.push(`עכשיו: ${nn.current.title} · ${formatBlockTimeRange(nn.current)}`);
       else if (nn.winNow) bits.push(`עכשיו: ${nn.winNow.label} · ${nn.winNow.from}–${nn.winNow.to}`);
-      if (nn.next) bits.push(`הבא: ${nn.next.title} · ${minutesToTimeString(nn.next.startMin)}`);
+      if (nn.next) bits.push(`הבא: ${nn.next.title} · ${formatBlockTimeRange(nn.next)}`);
       else if (nn.winNext) bits.push(`הבא: ${nn.winNext.label} · ${nn.winNext.from}`);
       if (!bits.length) {
         nextEl.classList.add("hidden");
@@ -1414,15 +1415,24 @@ function fillHourlyHourSelect(sel, hours) {
   else sel.value = String(list[0]);
 }
 
-function hoursForHourlyWindow(windowId) {
-  if (windowId === "night") return [21, 22, 23, 0, 1];
+function hoursForHourlyWindow(windowId, forEnd = false) {
+  if (windowId === "night") return forEnd ? [21, 22, 23, 0, 1, 2] : [21, 22, 23, 0, 1];
   const w = getDayWindow(windowId);
   if (!w) return null;
   const startH = Math.floor(w.start / 60);
-  const endH = Math.min(23, Math.floor((w.end - 1) / 60));
+  const endH = forEnd
+    ? Math.min(23, Math.floor(w.end / 60))
+    : Math.min(23, Math.floor((w.end - 1) / 60));
   const hours = [];
   for (let h = startH; h <= endH; h += 1) hours.push(h);
   return hours;
+}
+
+function defaultEndMinForHourlyWindow(windowId, startMin) {
+  const w = getDayWindow(windowId);
+  if (w) return w.end;
+  const s = Number.isFinite(startMin) ? startMin : nearbyHourlyDefaultStart();
+  return Math.min(s + 60, 24 * 60 - 1);
 }
 
 function defaultStartMinForHourlyWindow(windowId) {
@@ -1438,13 +1448,24 @@ function clockHourFromPlanMin(totalMin) {
 }
 
 function initHourlyTimeSelects() {
-  for (const id of ["hourlyScheduleStartH", "hourlyScheduleEditStartH"]) {
+  for (const id of [
+    "hourlyScheduleStartH",
+    "hourlyScheduleEditStartH",
+    "hourlyScheduleEndH",
+    "hourlyScheduleEditEndH",
+  ]) {
     fillHourlyHourSelect(document.getElementById(id));
   }
-  for (const id of ["hourlyScheduleStartM", "hourlyScheduleEditStartM"]) {
+  for (const id of [
+    "hourlyScheduleStartM",
+    "hourlyScheduleEditStartM",
+    "hourlyScheduleEndM",
+    "hourlyScheduleEditEndM",
+  ]) {
     fillHourlyMinuteSelect(document.getElementById(id));
   }
   setHourlyHmPair("hourlyScheduleStart", nearbyHourlyDefaultStart());
+  setHourlyHmPair("hourlyScheduleEnd", nearbyHourlyDefaultStart() + 60, null, true);
 }
 
 function nearbyHourlyDefaultStart() {
@@ -1455,26 +1476,25 @@ function nearbyHourlyDefaultStart() {
   return Math.max(0, Math.min(23 * 60, start));
 }
 
-function syncHourlyTimeRow(checkId, rowId, pairPrefix, startMin, windowId) {
+function syncHourlyTimeRow(checkId, rowId, startPrefix, startMin, windowId, endPrefix, endMin) {
   const on = !!document.getElementById(checkId)?.checked;
   document.getElementById(rowId)?.classList.toggle("hidden", !on);
   if (on) {
-    setHourlyHmPair(
-      pairPrefix,
-      Number.isFinite(startMin) ? startMin : defaultStartMinForHourlyWindow(windowId),
-      windowId,
-    );
+    const start = Number.isFinite(startMin) ? startMin : defaultStartMinForHourlyWindow(windowId);
+    setHourlyHmPair(startPrefix, start, windowId, false);
+    const end = Number.isFinite(endMin) ? endMin : defaultEndMinForHourlyWindow(windowId, start);
+    if (endPrefix) setHourlyHmPair(endPrefix, end, windowId, true);
   }
 }
 
-function setHourlyHmPair(prefix, totalMin, windowId) {
+function setHourlyHmPair(prefix, totalMin, windowId, forEnd = false) {
   const t = Number(totalMin);
   if (!Number.isFinite(t)) return;
   const h = clockHourFromPlanMin(t);
   const m = Math.max(0, Math.min(59, t % 60));
   const hEl = document.getElementById(`${prefix}H`);
   const mEl = document.getElementById(`${prefix}M`);
-  const hours = hoursForHourlyWindow(windowId);
+  const hours = hoursForHourlyWindow(windowId, forEnd);
   fillHourlyHourSelect(hEl, hours);
   if (hEl instanceof HTMLSelectElement) {
     if (windowId === "night") hEl.dataset.overnight = "1";
@@ -1511,6 +1531,8 @@ function openHourlyScheduleEditDialog(dateKey, blockId) {
     "hourlyScheduleEditStart",
     hasTime ? blk.startMin : defaultStartMinForHourlyWindow(editWin),
     editWin,
+    "hourlyScheduleEditEnd",
+    hasTime && Number.isFinite(blk.endMin) ? blk.endMin : null,
   );
   document.getElementById("hourlyScheduleEditDone").checked = !!blk.done;
   dlg.dataset.editDateKey = dateKey;
@@ -1522,7 +1544,7 @@ function openHourlyScheduleEditDialog(dateKey, blockId) {
 function hourlyTaskCardHtml(viewKey, blk, fromWork = false, mark = "") {
   const timed = blockHasTime(blk);
   const timeBadge = timed
-    ? `<span class="hourly-task-time">${escapeHtml(minutesToTimeString(blk.startMin))}</span>`
+    ? `<span class="hourly-task-time">${escapeHtml(formatBlockTimeRange(blk))}</span>`
     : "";
   const workMark = fromWork ? `<div class="hourly-task-from-work">מהעסק</div>` : "";
   const subs = Array.isArray(blk.subs) ? blk.subs : [];
@@ -1617,9 +1639,9 @@ function fillHourlyNowNext(viewKey) {
   const nn = nowAndNextOnDay(hourlySchedule, viewKey, planMinutesNow());
   const nowParts = [];
   if (nn.winNow) nowParts.push(`${nn.winNow.from}–${nn.winNow.to} · ${nn.winNow.label}`);
-  if (nn.current) nowParts.push(`${minutesToTimeString(nn.current.startMin)} ${nn.current.title}`);
+  if (nn.current) nowParts.push(`${formatBlockTimeRange(nn.current)} ${nn.current.title}`);
   const nextParts = [];
-  if (nn.next) nextParts.push(`${minutesToTimeString(nn.next.startMin)} ${nn.next.title}`);
+  if (nn.next) nextParts.push(`${formatBlockTimeRange(nn.next)} ${nn.next.title}`);
   else if (nn.winNext) nextParts.push(`${nn.winNext.from} · ${nn.winNext.label}`);
   if (!nowParts.length && !nextParts.length) {
     el.hidden = true;
@@ -1711,7 +1733,7 @@ function renderHourlySchedulePage() {
       const lines = work
         .slice(0, 4)
         .map((b) => {
-          const tm = blockHasTime(b) ? ` · ${minutesToTimeString(b.startMin)}` : "";
+          const tm = blockHasTime(b) ? ` · ${formatBlockTimeRange(b)}` : "";
           return `<div class="hourly-work-line">${escapeHtml(b.title)}${escapeHtml(tm)}</div>`;
         })
         .join("");
@@ -1745,10 +1767,13 @@ function renderHourlySchedulePage() {
     const hasEl = document.getElementById("hourlyAddHasTime");
     if (hasEl instanceof HTMLInputElement) hasEl.checked = false;
     document.getElementById("hourlyAddTimeRow")?.classList.add("hidden");
+    const startDef = defaultStartMinForHourlyWindow(hourlyOpenWindow);
+    setHourlyHmPair("hourlyScheduleStart", startDef, hourlyOpenWindow, false);
     setHourlyHmPair(
-      "hourlyScheduleStart",
-      defaultStartMinForHourlyWindow(hourlyOpenWindow),
+      "hourlyScheduleEnd",
+      defaultEndMinForHourlyWindow(hourlyOpenWindow, startDef),
       hourlyOpenWindow,
+      true,
     );
   }
   const head = document.getElementById("hourlySlotHead");
@@ -5122,6 +5147,8 @@ function wireGlobalHandlers() {
       "hourlyScheduleStart",
       defaultStartMinForHourlyWindow(hourlyOpenWindow),
       hourlyOpenWindow,
+      "hourlyScheduleEnd",
+      defaultEndMinForHourlyWindow(hourlyOpenWindow, defaultStartMinForHourlyWindow(hourlyOpenWindow)),
     );
   });
   document.getElementById("hourlyEditHasTime")?.addEventListener("change", () => {
@@ -5136,6 +5163,10 @@ function wireGlobalHandlers() {
       "hourlyScheduleEditStart",
       blockHasTime(blk) ? blk.startMin : defaultStartMinForHourlyWindow(editWin),
       editWin,
+      "hourlyScheduleEditEnd",
+      blockHasTime(blk) && Number.isFinite(blk.endMin)
+        ? blk.endMin
+        : defaultEndMinForHourlyWindow(editWin, blockHasTime(blk) ? blk.startMin : null),
     );
   });
   document.getElementById("hourlySlotBack")?.addEventListener("click", () => {
@@ -5217,14 +5248,16 @@ function wireGlobalHandlers() {
     }
     const withTime = !!document.getElementById("hourlyAddHasTime")?.checked;
     const startMin = withTime ? getHourlyHmPair("hourlyScheduleStart") : null;
-    if (withTime && startMin == null) {
-      toast("נא לבחור שעה.");
+    const endMin = withTime ? getHourlyHmPair("hourlyScheduleEnd") : null;
+    if (withTime && (startMin == null || endMin == null)) {
+      toast("נא לבחור מ־ ועד.");
       return;
     }
     const isWork = hourlyOpenWindow === "work";
     const ok = addScheduleBlock(hourlySchedule, hourlyBrowseDateKey, uid("hs"), title, startMin, {
       lane: isWork ? "work" : "slot",
       slot: isWork ? null : hourlyOpenWindow,
+      endMin,
     });
     if (!ok) {
       toast("לא נוסף — בדקי את הטקסט.");
@@ -5309,14 +5342,16 @@ function wireGlobalHandlers() {
     const title = document.getElementById("hourlyScheduleEditTitle")?.value?.trim();
     const withTime = !!document.getElementById("hourlyEditHasTime")?.checked;
     const startMin = withTime ? getHourlyHmPair("hourlyScheduleEditStart") : null;
+    const endMin = withTime ? getHourlyHmPair("hourlyScheduleEditEnd") : null;
     const done = !!document.getElementById("hourlyScheduleEditDone")?.checked;
-    if (!dateKey || !blockId || !title || (withTime && startMin == null)) {
-      toast("נא למלא כותרת, ואם יש תזכורת — גם שעה.");
+    if (!dateKey || !blockId || !title || (withTime && (startMin == null || endMin == null))) {
+      toast("נא למלא כותרת, ואם יש שעה — מ־ ועד.");
       return;
     }
     const ok = updateScheduleBlock(hourlySchedule, dateKey, blockId, {
       title,
       startMin,
+      endMin,
       done,
     });
     if (!ok) {

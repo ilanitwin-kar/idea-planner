@@ -62,15 +62,28 @@ export function remindersFromHourlySchedule(schedule) {
     const title = String(blk.title ?? "").trim() || "משימה";
     if (blockHasTime(blk)) {
       const fireAt = hourlyBlockFireAtMs(dateKey, blk.startMin);
-      if (fireAt == null || fireAt < now - 45_000) continue;
-      const startLabel = minutesToTimeString(blk.startMin);
-      out.push({
-        id: `hourly:${dateKey}:${blk.id}`,
-        title: "תזכורת מלו״ז",
-        body: `${title} · ${startLabel}`,
-        url: "/",
-        fireAt,
-      });
+      if (fireAt != null && fireAt >= now - 45_000) {
+        const startLabel = minutesToTimeString(blk.startMin);
+        out.push({
+          id: `hourly:${dateKey}:${blk.id}`,
+          title: "תזכורת מלו״ז",
+          body: `${title} · ${startLabel}`,
+          url: "/",
+          fireAt,
+        });
+      }
+      if (Number.isFinite(blk.endMin)) {
+        const endAt = hourlyBlockFireAtMs(dateKey, blk.endMin);
+        if (endAt != null && endAt >= now - 45_000) {
+          out.push({
+            id: `hourly-end:${dateKey}:${blk.id}`,
+            title: "סיום בלו״ז",
+            body: `${title} · ${minutesToTimeString(blk.endMin)}`,
+            url: "/",
+            fireAt: endAt,
+          });
+        }
+      }
       continue;
     }
     if (!digestTitles.has(dateKey)) digestTitles.set(dateKey, []);
@@ -323,18 +336,32 @@ async function tickLocalHourlyRemindersAsync(schedule) {
     const title = String(blk.title ?? "").trim() || "משימה";
     if (blockHasTime(blk)) {
       const fireAt = hourlyBlockFireAtMs(dateKey, blk.startMin);
-      if (fireAt == null || now < fireAt) continue;
-      const key = `hourly:${dateKey}:${blk.id}:${blk.startMin}`;
-      if (fired[key]) continue;
-      fired[key] = now;
-      changed = true;
-      const startLabel = minutesToTimeString(blk.startMin);
-      const late = now - fireAt > 2 * 60 * 1000;
-      await showLocalHourlyNotification(
-        key,
-        late ? "תזכורת מלו״ז (פיגור)" : "תזכורת מלו״ז",
-        late ? `פג הזמן: ${title} · ${startLabel}` : `עכשיו: ${title} (${startLabel})`,
-      );
+      if (fireAt != null && now >= fireAt) {
+        const key = `hourly:${dateKey}:${blk.id}:${blk.startMin}`;
+        if (!fired[key]) {
+          fired[key] = now;
+          changed = true;
+          const startLabel = minutesToTimeString(blk.startMin);
+          const late = now - fireAt > 2 * 60 * 1000;
+          await showLocalHourlyNotification(
+            key,
+            late ? "תזכורת מלו״ז (פיגור)" : "תזכורת מלו״ז",
+            late ? `פג הזמן: ${title} · ${startLabel}` : `עכשיו: ${title} (${startLabel})`,
+          );
+        }
+      }
+      if (Number.isFinite(blk.endMin)) {
+        const endAt = hourlyBlockFireAtMs(dateKey, blk.endMin);
+        if (endAt != null && now >= endAt) {
+          const ekey = `hourly-end:${dateKey}:${blk.id}:${blk.endMin}`;
+          if (!fired[ekey]) {
+            fired[ekey] = now;
+            changed = true;
+            const endLabel = minutesToTimeString(blk.endMin);
+            await showLocalHourlyNotification(ekey, "סיום בלו״ז", `${title} · ${endLabel}`);
+          }
+        }
+      }
       continue;
     }
     digestTitles.push(title);

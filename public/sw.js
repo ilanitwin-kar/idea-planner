@@ -158,7 +158,9 @@ function pad2sw(n) {
 }
 
 function minutesLabel(totalMin) {
-  const m = Math.max(0, Math.min(24 * 60 - 1, Math.round(Number(totalMin) || 0)));
+  const x = Number(totalMin);
+  if (!Number.isFinite(x)) return "00:00";
+  const m = ((Math.round(x) % (24 * 60)) + 24 * 60) % (24 * 60);
   return `${pad2sw(Math.floor(m / 60))}:${pad2sw(m % 60)}`;
 }
 
@@ -180,20 +182,39 @@ async function tickHourlyFromIdb() {
     const hasTime = Number.isFinite(blk.startMin);
     if (hasTime) {
       const fireAt = fireAtMs(today, blk.startMin);
-      if (fireAt == null || now < fireAt) continue;
-      const key = `hourly:${today}:${blk.id}:${blk.startMin}`;
-      if (fired[key]) continue;
-      fired[key] = now;
-      changed = true;
-      const late = now - fireAt > 2 * 60 * 1000;
-      const when = minutesLabel(blk.startMin);
-      await self.registration.showNotification(late ? "תזכורת מלו״ז (פיגור)" : "תזכורת מלו״ז", {
-        body: late ? `פג הזמן: ${title} · ${when}` : `עכשיו: ${title} (${when})`,
-        tag: key,
-        icon: "/icons/icon-192.png",
-        badge: "/icons/icon-192.png",
-        data: { url: "/" },
-      });
+      if (fireAt != null && now >= fireAt) {
+        const key = `hourly:${today}:${blk.id}:${blk.startMin}`;
+        if (!fired[key]) {
+          fired[key] = now;
+          changed = true;
+          const late = now - fireAt > 2 * 60 * 1000;
+          const when = minutesLabel(blk.startMin);
+          await self.registration.showNotification(late ? "תזכורת מלו״ז (פיגור)" : "תזכורת מלו״ז", {
+            body: late ? `פג הזמן: ${title} · ${when}` : `עכשיו: ${title} (${when})`,
+            tag: key,
+            icon: "/icons/icon-192.png",
+            badge: "/icons/icon-192.png",
+            data: { url: "/" },
+          });
+        }
+      }
+      if (Number.isFinite(Number(blk.endMin))) {
+        const endAt = fireAtMs(today, blk.endMin);
+        if (endAt != null && now >= endAt) {
+          const ekey = `hourly-end:${today}:${blk.id}:${blk.endMin}`;
+          if (!fired[ekey]) {
+            fired[ekey] = now;
+            changed = true;
+            await self.registration.showNotification("סיום בלו״ז", {
+              body: `${title} · ${minutesLabel(blk.endMin)}`,
+              tag: ekey,
+              icon: "/icons/icon-192.png",
+              badge: "/icons/icon-192.png",
+              data: { url: "/" },
+            });
+          }
+        }
+      }
       continue;
     }
     digestTitles.push(title);

@@ -575,12 +575,18 @@
                 <input id="hourlyAddHasTime" type="checkbox" />
                 שעה
               </label>
-              <div id="hourlyAddTimeRow" class="hourly-times-row hidden" role="group" aria-label="שעת תזכורת">
+              <div id="hourlyAddTimeRow" class="hourly-times-row hidden" role="group" aria-label="מ־ עד">
                 <div class="hourly-time-chip">
-                  <span>ב־</span>
-                  <select id="hourlyScheduleStartH" class="select hourly-hm" aria-label="שעה"></select>
+                  <span>מ־</span>
+                  <select id="hourlyScheduleStartH" class="select hourly-hm" aria-label="התחלה שעה"></select>
                   <span class="hourly-hm-colon" aria-hidden="true">:</span>
-                  <select id="hourlyScheduleStartM" class="select hourly-hm" aria-label="דקות"></select>
+                  <select id="hourlyScheduleStartM" class="select hourly-hm" aria-label="התחלה דקות"></select>
+                </div>
+                <div class="hourly-time-chip">
+                  <span>עד</span>
+                  <select id="hourlyScheduleEndH" class="select hourly-hm" aria-label="סיום שעה"></select>
+                  <span class="hourly-hm-colon" aria-hidden="true">:</span>
+                  <select id="hourlyScheduleEndM" class="select hourly-hm" aria-label="סיום דקות"></select>
                 </div>
               </div>
               <button class="btn" type="submit">הוספה</button>
@@ -599,12 +605,18 @@
           <input id="hourlyEditHasTime" type="checkbox" />
           שעה
         </label>
-        <div id="hourlyEditTimeRow" class="hourly-times-row hourly-times-row--edit hidden" role="group" aria-label="שעת תזכורת">
+        <div id="hourlyEditTimeRow" class="hourly-times-row hourly-times-row--edit hidden" role="group" aria-label="מ־ עד">
           <div class="hourly-time-chip">
-            <span>ב־</span>
-            <select id="hourlyScheduleEditStartH" class="select hourly-hm" aria-label="שעה"></select>
+            <span>מ־</span>
+            <select id="hourlyScheduleEditStartH" class="select hourly-hm" aria-label="התחלה שעה"></select>
             <span class="hourly-hm-colon" aria-hidden="true">:</span>
-            <select id="hourlyScheduleEditStartM" class="select hourly-hm" aria-label="דקות"></select>
+            <select id="hourlyScheduleEditStartM" class="select hourly-hm" aria-label="התחלה דקות"></select>
+          </div>
+          <div class="hourly-time-chip">
+            <span>עד</span>
+            <select id="hourlyScheduleEditEndH" class="select hourly-hm" aria-label="סיום שעה"></select>
+            <span class="hourly-hm-colon" aria-hidden="true">:</span>
+            <select id="hourlyScheduleEditEndM" class="select hourly-hm" aria-label="סיום דקות"></select>
           </div>
         </div>
         <div class="dialog-actions">

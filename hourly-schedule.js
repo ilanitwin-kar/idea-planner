@@ -127,6 +127,9 @@ function normalizeBlock(b) {
   if (!title) return null;
   const startRaw = b.startMin;
   const startMin = startRaw == null || startRaw === "" ? null : clampMinutes(startRaw);
+  const endRaw = b.endMin;
+  const endMin =
+    startMin == null || endRaw == null || endRaw === "" ? null : coerceEndMin(startMin, clampMinutes(endRaw));
   const subs = Array.isArray(b.subs) ? b.subs.map(normalizeSub).filter(Boolean) : [];
   let slot = validSlot(b.slot);
   let lane = b.lane === "work" ? "work" : b.lane === "slot" ? "slot" : null;
@@ -143,7 +146,7 @@ function normalizeBlock(b) {
     slot = startMin != null ? windowIdForStartMin(startMin) : null;
     if (!slot) lane = "work";
   }
-  return { id: String(b.id), title, startMin, done: !!b.done, subs, lane, slot };
+  return { id: String(b.id), title, startMin, endMin, done: !!b.done, subs, lane, slot };
 }
 
 function ensureDay(state, dateKey) {
@@ -172,6 +175,17 @@ export function blockHasTime(blk) {
   return blk != null && Number.isFinite(blk.startMin);
 }
 
+export function blockHasEnd(blk) {
+  return blk != null && Number.isFinite(blk.endMin);
+}
+
+function coerceEndMin(startMin, endMin) {
+  if (!Number.isFinite(startMin) || !Number.isFinite(endMin)) return null;
+  if (endMin > startMin) return clampMinutes(endMin);
+  if (startMin >= 21 * 60 && endMin < 2 * 60) return clampMinutes(endMin + 24 * 60);
+  return clampMinutes(Math.min(startMin + 60, HOURLY_MAX_MIN));
+}
+
 export function timeStringToMinutes(hhmm) {
   const s = String(hhmm ?? "").trim();
   const m = /^(\d{1,2}):(\d{2})$/.exec(s);
@@ -193,6 +207,13 @@ export function minutesToTimeString(totalMin) {
 
 export function formatMinutesHebrew(totalMin) {
   return minutesToTimeString(totalMin);
+}
+
+export function formatBlockTimeRange(blk) {
+  if (!blockHasTime(blk)) return "";
+  const a = minutesToTimeString(blk.startMin);
+  if (!blockHasEnd(blk)) return a;
+  return `${a}–${minutesToTimeString(blk.endMin)}`;
 }
 
 export function windowIdForStartMin(startMin) {
@@ -229,6 +250,8 @@ export function addScheduleBlock(state, dateKey, id, title, startMin = null, met
   const t = String(title ?? "").trim();
   if (!t) return false;
   const start = startMin == null || startMin === "" ? null : clampMinutes(startMin);
+  const endRaw = meta?.endMin;
+  const end = start == null || endRaw == null || endRaw === "" ? null : coerceEndMin(start, clampMinutes(endRaw));
   const lane = meta?.lane === "work" ? "work" : "slot";
   const slot = lane === "slot" ? validSlot(meta?.slot) : null;
   if (lane === "slot" && !slot) return false;
@@ -236,6 +259,7 @@ export function addScheduleBlock(state, dateKey, id, title, startMin = null, met
     id,
     title: t,
     startMin: start,
+    endMin: end,
     done: false,
     subs: [],
     lane,
@@ -257,6 +281,11 @@ export function updateScheduleBlock(state, dateKey, blockId, patch) {
   }
   if ("startMin" in patch) {
     blk.startMin = patch.startMin == null || patch.startMin === "" ? null : clampMinutes(patch.startMin);
+  }
+  if ("endMin" in patch || "startMin" in patch) {
+    const start = blk.startMin;
+    const endRaw = "endMin" in patch ? patch.endMin : blk.endMin;
+    blk.endMin = start == null || endRaw == null || endRaw === "" ? null : coerceEndMin(start, clampMinutes(endRaw));
   }
   if ("done" in patch) blk.done = !!patch.done;
   if ("lane" in patch) blk.lane = patch.lane === "work" ? "work" : "slot";
@@ -492,7 +521,7 @@ export function copyWindowTitlesFromDay(state, fromKey, toKey, windowId, newId) 
       continue;
     }
     const meta = windowId === "work" ? { lane: "work" } : { lane: "slot", slot: windowId };
-    const ok = addScheduleBlock(state, toKey, newId(), b.title, b.startMin, meta);
+    const ok = addScheduleBlock(state, toKey, newId(), b.title, b.startMin, { ...meta, endMin: b.endMin });
     if (ok) {
       copied += 1;
       existing.add(b.title);
@@ -503,7 +532,12 @@ export function copyWindowTitlesFromDay(state, fromKey, toKey, windowId, newId) 
 
 export function nowAndNextOnDay(state, dateKey, nowPlanMin) {
   const timed = blocksForDay(state, dateKey).filter((b) => blockHasTime(b) && !b.done);
-  const current = [...timed].reverse().find((b) => b.startMin <= nowPlanMin) || null;
+  let current = null;
+  for (const b of timed) {
+    if (b.startMin > nowPlanMin) break;
+    const end = Number.isFinite(b.endMin) ? b.endMin : Infinity;
+    if (nowPlanMin < end) current = b;
+  }
   const next = timed.find((b) => b.startMin > nowPlanMin) || null;
   const winNow = DAY_WINDOWS.find((w) => {
     if (w.id === "night") return nowPlanMin >= 21 * 60 && nowPlanMin < 26 * 60;
