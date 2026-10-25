@@ -91,7 +91,6 @@ import {
   planDateKeyNow,
   WEEKDAYS_HE,
   weekdayOfDateKey,
-  dateKeysForRepeat,
   repeatWindowToWeekdays,
 } from "./hourly-schedule.js";
 import {
@@ -1564,13 +1563,13 @@ function hourlyTaskCardHtml(viewKey, blk, fromWork = false, mark = "") {
       </div>
       <div class="hourly-subs">${subRows}</div>
       <form class="hourly-sub-add" data-action="hourly-add-sub" data-date-key="${escapeHtml(viewKey)}" data-block-id="${escapeHtml(blk.id)}" autocomplete="off">
-        <input class="input hourly-sub-input" type="text" maxlength="200" placeholder="תת־משימה (מסמך, שעה למייבש…)" />
+        <input class="input hourly-sub-input" type="text" maxlength="200" />
         <button class="btn btn-ghost" type="submit">+</button>
       </form>
     </article>`;
 }
 
-function hourlyPreviewLines(titles, note, emptyText) {
+function hourlyPreviewLines(titles, note) {
   const bits = [];
   const n = String(note ?? "").trim();
   if (n) bits.push(n.split(/\n/)[0].slice(0, 90));
@@ -1578,11 +1577,10 @@ function hourlyPreviewLines(titles, note, emptyText) {
     if (bits.length >= 3) break;
     bits.push(t);
   }
-  if (!bits.length) return `<em>${escapeHtml(emptyText)}</em>`;
-  return escapeHtml(bits.join(" · "));
+  return bits.length ? escapeHtml(bits.join(" · ")) : "";
 }
 
-function fillHourlyRepeatPanel(viewKey) {
+function fillHourlyRepeatPanel() {
   const daysEl = document.getElementById("hourlyRepeatDays");
   if (daysEl) {
     daysEl.innerHTML = WEEKDAYS_HE.map((d) => {
@@ -1593,13 +1591,6 @@ function fillHourlyRepeatPanel(viewKey) {
   const weeksEl = document.getElementById("hourlyRepeatWeeks");
   if (weeksEl instanceof HTMLSelectElement && document.activeElement !== weeksEl) {
     weeksEl.value = String(hourlyRepeatWeeks);
-  }
-  const preview = document.getElementById("hourlyRepeatPreview");
-  if (preview) {
-    const keys = dateKeysForRepeat(viewKey, [...hourlyRepeatDays], hourlyRepeatWeeks).filter((k) => k !== viewKey);
-    if (!hourlyRepeatDays.size) preview.textContent = "בחרי לפחות יום אחד.";
-    else if (!keys.length) preview.textContent = "היום כבר מסומן — הוסיפי ימים או האריכי את המשך.";
-    else preview.textContent = `${keys.length} ימים יקבלו את אותן כותרות (בלי החומר).`;
   }
 }
 
@@ -1618,51 +1609,41 @@ function fillHourlyNowNext(viewKey) {
   const el = document.getElementById("hourlyNowNext");
   if (!el) return;
   const liveKey = planDateKeyNow();
-  const live = viewKey === liveKey;
-  const nn = nowAndNextOnDay(hourlySchedule, viewKey, live ? planMinutesNow() : -1);
-  if (!live && viewKey === localDateKey() && liveKey !== viewKey) {
-    el.hidden = false;
-    el.innerHTML = `
-      <div class="hourly-now-block">
-        <div class="hourly-now-kicker">עכשיו</div>
-        <div class="hourly-now-line">עדיין לילה של ${escapeHtml(formatHebrewDateShort(liveKey))} — עד 02:00</div>
-      </div>
-      <p class="hourly-now-help">לחצי ‹ ליום אתמול כדי לראות את החלון הפעיל. שעה על שורה = תזכורת ומעבר ל«עכשיו».</p>`;
+  if (viewKey !== liveKey) {
+    el.hidden = true;
+    el.innerHTML = "";
     return;
   }
-  if (!live) {
-    const first = blocksForDay(hourlySchedule, viewKey).find((b) => blockHasTime(b));
-    if (!first) {
-      el.hidden = true;
-      el.innerHTML = "";
-      return;
-    }
-    el.hidden = false;
-    el.innerHTML = `
-      <div class="hourly-now-block">
-        <div class="hourly-now-kicker">ביום הזה</div>
-        <div class="hourly-now-line">ראשון עם שעה: ${escapeHtml(first.title)} · ${escapeHtml(minutesToTimeString(first.startMin))}</div>
-      </div>
-      <p class="hourly-now-help">שעה על שורה = מתי להתחיל, ותזכורת באותו רגע. בלי שעה נשאר ברשימה.</p>`;
-    return;
-  }
+  const nn = nowAndNextOnDay(hourlySchedule, viewKey, planMinutesNow());
   const nowParts = [];
   if (nn.winNow) nowParts.push(`${nn.winNow.from}–${nn.winNow.to} · ${nn.winNow.label}`);
   if (nn.current) nowParts.push(`${minutesToTimeString(nn.current.startMin)} ${nn.current.title}`);
   const nextParts = [];
   if (nn.next) nextParts.push(`${minutesToTimeString(nn.next.startMin)} ${nn.next.title}`);
   else if (nn.winNext) nextParts.push(`${nn.winNext.from} · ${nn.winNext.label}`);
+  if (!nowParts.length && !nextParts.length) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
   el.hidden = false;
   el.innerHTML = `
-    <div class="hourly-now-block">
+    ${
+      nowParts.length
+        ? `<div class="hourly-now-block">
       <div class="hourly-now-kicker">עכשיו</div>
-      <div class="hourly-now-line">${escapeHtml(nowParts.join(" · ") || "אין חלון פעיל — אפשר לפתוח עסק או חלון")}</div>
-    </div>
-    <div class="hourly-now-block">
+      <div class="hourly-now-line">${escapeHtml(nowParts.join(" · "))}</div>
+    </div>`
+        : ""
+    }
+    ${
+      nextParts.length
+        ? `<div class="hourly-now-block">
       <div class="hourly-now-kicker">הבא</div>
-      <div class="hourly-now-line">${escapeHtml(nextParts.join(" · ") || "אין שורה הבאה עם שעה — כשמסיימים, מסמנים וי")}</div>
-    </div>
-    <p class="hourly-now-help">שעה על שורה = תזכורת באותו רגע, ואז זה הופך ל«עכשיו». השורה הבאה עם שעה היא «הבא». בלי שעה — נשאר ברשימה, ותזכורת ב־10:00.</p>`;
+      <div class="hourly-now-line">${escapeHtml(nextParts.join(" · "))}</div>
+    </div>`
+        : ""
+    }`;
 }
 
 function renderHourlySchedulePage() {
@@ -1709,7 +1690,6 @@ function renderHourlySchedulePage() {
         const preview = hourlyPreviewLines(
           items.filter((b) => !b.done).map((b) => b.title),
           note,
-          "לחצי לפתוח ולכתוב",
         );
         return `
           <button type="button" class="hourly-win hourly-win--${w.kind}${now ? " is-now" : ""}" data-action="hourly-open-window" data-window-id="${escapeHtml(w.id)}">
@@ -1719,8 +1699,7 @@ function renderHourlySchedulePage() {
             </span>
             <span class="hourly-win-body">
               <span class="hourly-win-title">${escapeHtml(w.label)}</span>
-              <span class="hourly-win-sub">${escapeHtml(w.sub)}</span>
-              <span class="hourly-win-preview">${preview}</span>
+              ${preview ? `<span class="hourly-win-preview">${preview}</span>` : ""}
             </span>
           </button>`;
       }).join("");
@@ -1729,7 +1708,6 @@ function renderHourlySchedulePage() {
     if (workEl) {
       const work = workBlocksForDay(hourlySchedule, viewKey);
       const note = getWindowNote(hourlySchedule, viewKey, "work");
-      const openCount = work.filter((b) => !b.done).length;
       const lines = work
         .slice(0, 4)
         .map((b) => {
@@ -1739,21 +1717,15 @@ function renderHourlySchedulePage() {
         .join("");
       workEl.innerHTML = `
         <button type="button" class="hourly-work-card" data-action="hourly-open-window" data-window-id="work">
-          <div class="hourly-work-kicker">רשימה חיה</div>
           <div class="hourly-work-title">${escapeHtml(WORK_LANE.label)}</div>
-          <div class="hourly-work-sub">${escapeHtml(WORK_LANE.sub)}${openCount ? ` · ${openCount} פתוחות` : ""}</div>
           <div class="hourly-work-preview">
             ${note ? `<div class="hourly-work-line">${escapeHtml(note.split(/\n/)[0].slice(0, 100))}</div>` : ""}
-            ${lines || `<div class="hourly-work-line">לחצי — וי, שעה, או רק ברשימה</div>`}
+            ${lines}
           </div>
         </button>`;
     }
     const pr = scheduleDayProgress(hourlySchedule, viewKey);
-    if (progEl) {
-      if (!pr.total) progEl.textContent = "לחצי על חלון או על עסק — ויש מקום גדול לכתוב.";
-      else progEl.textContent = `${pr.done}/${pr.total} שורות בלו״ז`;
-      if (notificationPermission() === "granted") progEl.textContent += " · התראות פעילות";
-    }
+    if (progEl) progEl.textContent = pr.total ? `${pr.done}/${pr.total}` : "";
     return;
   }
 
@@ -1784,32 +1756,19 @@ function renderHourlySchedulePage() {
   if (head) {
     head.innerHTML = isWork
       ? `${dayLine}
-         <div class="hourly-slot-times">כל היום</div>
-         <div class="hourly-slot-title">${escapeHtml(WORK_LANE.label)}</div>
-         <div class="hourly-slot-sub">${escapeHtml(WORK_LANE.sub)}. בלי שעה — תזכורת ב־10:00 עם כל מה שבלי שעה. עם שעה — גם כאן וגם בחלון המתאים.</div>`
+         <div class="hourly-slot-title">${escapeHtml(WORK_LANE.label)}</div>`
       : `${dayLine}
          <div class="hourly-slot-times">${escapeHtml(win.from)} – ${escapeHtml(win.to)}</div>
-         <div class="hourly-slot-title">${escapeHtml(win.label)}</div>
-         <div class="hourly-slot-sub">${escapeHtml(win.sub)}</div>`;
+         <div class="hourly-slot-title">${escapeHtml(win.label)}</div>`;
   }
-  fillHourlyRepeatPanel(viewKey);
-  const cap = document.getElementById("hourlyNoteCaption");
-  if (cap) cap.textContent = "החומר להיום — משתנה כל יום";
+  fillHourlyRepeatPanel();
   const noteEl = document.getElementById("hourlySlotNote");
   if (noteEl instanceof HTMLTextAreaElement && document.activeElement !== noteEl) {
     noteEl.value = getWindowNote(hourlySchedule, viewKey, hourlyOpenWindow);
-    noteEl.placeholder = isWork ? "מה בדיוק היום בעסק…" : win.noteHint;
+    noteEl.placeholder = "";
   }
   const titleInp = document.getElementById("hourlyScheduleTitle");
-  if (titleInp instanceof HTMLInputElement) {
-    titleInp.placeholder = isWork ? WORK_LANE.addPlaceholder : win.addPlaceholder;
-  }
-  const hint = document.getElementById("hourlySlotAddHint");
-  if (hint) {
-    hint.textContent = isWork
-      ? "בלי שעה — רק בעסק, תזכורת ב־10:00. עם שעה — תזכורת באותו רגע, וגם בחלון של השעה."
-      : "אפשר רק טקסט בחלון. אם יש שעה — גם תזכורת באותו רגע.";
-  }
+  if (titleInp instanceof HTMLInputElement) titleInp.placeholder = "";
   if (listEl) {
     const items = isWork
       ? workBlocksForDay(hourlySchedule, viewKey)
@@ -1817,7 +1776,7 @@ function renderHourlySchedulePage() {
     const live = viewKey === planDateKeyNow();
     const nn = live ? nowAndNextOnDay(hourlySchedule, viewKey, planMinutesNow()) : { current: null, next: null };
     if (!items.length) {
-      listEl.innerHTML = `<div class="empty">${isWork ? "עדיין ריק בעסק — הוסיפי למעלה." : "עדיין ריק בחלון הזה — כותרת קבועה למעלה, חומר להיום במחברת, ורשימה כאן."}</div>`;
+      listEl.innerHTML = "";
     } else {
       listEl.innerHTML = items
         .map((b) => {
@@ -5203,12 +5162,12 @@ function wireGlobalHandlers() {
     if (!Number.isFinite(day)) return;
     if (hourlyRepeatDays.has(day)) hourlyRepeatDays.delete(day);
     else hourlyRepeatDays.add(day);
-    fillHourlyRepeatPanel(hourlyBrowseDateKey);
+    fillHourlyRepeatPanel();
   });
   document.getElementById("hourlyRepeatWeeks")?.addEventListener("change", (e) => {
     const n = Number(e.target instanceof HTMLSelectElement ? e.target.value : 2);
     hourlyRepeatWeeks = Number.isFinite(n) ? n : 2;
-    fillHourlyRepeatPanel(hourlyBrowseDateKey);
+    fillHourlyRepeatPanel();
   });
   document.getElementById("hourlyRepeatApply")?.addEventListener("click", () => {
     if (!hourlyOpenWindow) return;
@@ -5226,12 +5185,12 @@ function wireGlobalHandlers() {
     );
     persistHourlySchedule();
     if (!result.copied) {
-      if (!result.sourceCount) toast("קודם הוסיפי כותרות לרשימה כאן, ואז חזרה לימים.");
-      else if (!result.keys.length) toast("הוסיפי ימים או האריכי את המשך.");
-      else toast("הכותרות כבר קיימות בימים האלה — אפשר רק למלא חומר.");
+      if (!result.sourceCount) toast("אין מה להעתיק.");
+      else if (!result.keys.length) toast("אין ימים נוספים.");
+      else toast("כבר קיים.");
       return;
     }
-    toast(`הועתק ל־${result.days} ימים (${result.copied} כותרות). החומר כל יום מחדש.`);
+    toast(`הועתק ל־${result.days} ימים`);
     render();
   });
   document.getElementById("hourlyScheduleDayPrev")?.addEventListener("click", () => shiftHourlyBrowse(-1));

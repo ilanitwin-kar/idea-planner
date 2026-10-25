@@ -543,7 +543,6 @@
           </div>
 
           <div id="hourlyMapView" class="hourly-map">
-            <p class="hourly-lead">לחצי על חלון — נפתח דף משלו לכתוב בו. העסק תמיד למטה, גם בלי שעה.</p>
             <div id="hourlyNowNext" class="hourly-now-next" hidden></div>
             <div id="hourlyWindowGrid" class="hourly-window-grid" aria-label="חלונות היום"></div>
             <div id="hourlyWorkMap" class="hourly-work-map" aria-label="עסק"></div>
@@ -554,8 +553,7 @@
             <button type="button" id="hourlySlotBack" class="btn btn-ghost hourly-slot-back">← כל היום</button>
             <header id="hourlySlotHead" class="hourly-slot-head"></header>
             <div class="hourly-repeat-panel">
-              <div class="hourly-note-caption">חזרה לימים אחרים</div>
-              <p class="hourly-repeat-hint">בוחרים ימים, ולמשך כמה זמן. יועתקו רק הכותרות והשעות — החומר תכתבי כל יום.</p>
+              <div class="hourly-note-caption">חזרה</div>
               <div id="hourlyRepeatDays" class="hourly-repeat-days" role="group" aria-label="ימים בשבוע"></div>
               <label class="hourly-repeat-weeks-wrap">
                 למשך
@@ -566,18 +564,16 @@
                   <option value="8">חודשיים</option>
                 </select>
               </label>
-              <p id="hourlyRepeatPreview" class="hourly-repeat-hint"></p>
               <button type="button" id="hourlyRepeatApply" class="btn">החילו חזרה</button>
             </div>
             <label class="hourly-note-wrap">
-              <span id="hourlyNoteCaption" class="hourly-note-caption"></span>
               <textarea id="hourlySlotNote" class="hourly-slot-note" rows="10" maxlength="8000" autocomplete="off"></textarea>
             </label>
             <form id="hourlyScheduleAddForm" class="hourly-add-form hourly-slot-add" autocomplete="off">
-              <input id="hourlyScheduleTitle" class="input" type="text" maxlength="200" placeholder="שורה לרשימה…" required />
+              <input id="hourlyScheduleTitle" class="input" type="text" maxlength="200" required />
               <label class="checkline hourly-has-time">
                 <input id="hourlyAddHasTime" type="checkbox" />
-                עם שעת תזכורת
+                שעה
               </label>
               <div id="hourlyAddTimeRow" class="hourly-times-row hidden" role="group" aria-label="שעת תזכורת">
                 <div class="hourly-time-chip">
@@ -587,8 +583,7 @@
                   <select id="hourlyScheduleStartM" class="select hourly-hm" aria-label="דקות"></select>
                 </div>
               </div>
-              <p id="hourlySlotAddHint" class="hourly-add-hint">בלי שעה — נשאר כאן. עם שעה — גם תזכורת באותו רגע.</p>
-              <button class="btn" type="submit">הוספה לרשימה</button>
+              <button class="btn" type="submit">הוספה</button>
             </form>
             <div id="hourlyScheduleList" class="hourly-task-list hourly-task-list--roomy" aria-label="רשימת החלון"></div>
           </div>
@@ -602,7 +597,7 @@
         <input id="hourlyScheduleEditTitle" class="input" type="text" maxlength="200" autocomplete="off" />
         <label class="checkline hourly-has-time">
           <input id="hourlyEditHasTime" type="checkbox" />
-          עם שעת תזכורת
+          שעה
         </label>
         <div id="hourlyEditTimeRow" class="hourly-times-row hourly-times-row--edit hidden" role="group" aria-label="שעת תזכורת">
           <div class="hourly-time-chip">
