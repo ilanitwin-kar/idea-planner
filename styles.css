@@ -2330,10 +2330,89 @@ body.app-mode-home .top-menu-dialog{
   color: var(--muted);
   text-align: center;
 }
+.hourly-now-next{
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(196, 30, 58, 0.28);
+  background: linear-gradient(180deg, #fff5f7 0%, #fff 70%);
+  box-shadow: var(--shadow-soft);
+}
+.hourly-now-block{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hourly-now-kicker{
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--heading);
+}
+.hourly-now-line{
+  font-size: 1.12rem;
+  font-weight: 800;
+  line-height: 1.4;
+  color: #1a1a1a;
+}
+.hourly-now-help{
+  margin: 2px 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.hourly-heading-wrap{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hourly-slot-heading{
+  font-size: 1.15rem;
+  font-weight: 700;
+  padding: 12px 14px;
+  min-height: 48px;
+}
+.hourly-repeat-row{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+.hourly-repeat-btn{
+  font-weight: 800;
+  min-height: 44px;
+}
+.hourly-repeat-hint{
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.hourly-task.is-now-item{
+  border-color: rgba(196, 30, 58, 0.45);
+  box-shadow: 0 6px 18px rgba(196, 30, 58, 0.12);
+}
+.hourly-task.is-next-item{
+  border-style: dashed;
+}
 .hourly-map{
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.hourly-map.hidden,
+.hourly-slot.hidden{
+  display: none !important;
+}
+.hourly-day-shell--page .hourly-hero,
+.hourly-day-shell--page #hourlyPushBanner{
+  display: none !important;
+}
+.hourly-day-shell--page{
+  padding: 12px 16px 36px;
+  min-height: min(72vh, 820px);
 }
 .hourly-window-grid{
   display: flex;
@@ -2477,6 +2556,15 @@ body.app-mode-home .top-menu-dialog{
   align-self: flex-start;
   font-weight: 800;
 }
+.hourly-slot:focus{
+  outline: none;
+}
+.hourly-slot-day{
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
 .hourly-slot-head{
   padding: 8px 4px 4px;
 }
@@ -2538,6 +2626,61 @@ body.app-mode-home .top-menu-dialog{
   .hourly-win-title, .hourly-work-title{ font-size: 1.22rem; }
   .hourly-slot-title{ font-size: 1.7rem; }
   .hourly-slot-note{ min-height: 280px; }
+}
+@media (min-width: 768px){
+  #viewHourlySchedule{
+    max-width: 820px;
+  }
+  .hourly-lead{
+    font-size: 0.92rem;
+    margin-bottom: 10px;
+  }
+  .hourly-now-next{
+    padding: 12px 14px 10px;
+    border-radius: 14px;
+    gap: 6px;
+  }
+  .hourly-now-line{ font-size: 0.98rem; }
+  .hourly-now-help{ font-size: 0.8rem; }
+  .hourly-window-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .hourly-win{
+    min-height: 96px;
+    border-radius: 14px;
+  }
+  .hourly-win-when{ padding: 10px 6px; }
+  .hourly-win-range{ font-size: 0.92rem; }
+  .hourly-win-body{ padding: 10px 12px 12px; }
+  .hourly-win-title{ font-size: 1.02rem; }
+  .hourly-win-sub{ font-size: 0.8rem; }
+  .hourly-win-preview{ font-size: 0.85rem; margin-top: 6px; }
+  .hourly-work-card{ padding: 14px 16px 16px; border-radius: 16px; }
+  .hourly-work-title{ font-size: 1.2rem; }
+  .hourly-work-sub{ font-size: 0.9rem; }
+  .hourly-work-line{ font-size: 0.92rem; padding: 6px 10px; }
+  .hourly-slot{ gap: 12px; }
+  .hourly-slot-times{ font-size: 1.05rem; }
+  .hourly-slot-title{ font-size: 1.45rem; }
+  .hourly-slot-sub{ font-size: 0.92rem; }
+  .hourly-slot-heading{ font-size: 1rem; min-height: 42px; padding: 8px 12px; }
+  .hourly-slot-note{
+    min-height: 140px;
+    font-size: 1rem;
+    line-height: 28px;
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        #fff 0,
+        #fff 27px,
+        rgba(216, 27, 96, 0.08) 28px
+      );
+  }
+  .hourly-add-form{ padding: 10px 12px 12px; }
+  .hourly-slot-add .input{ font-size: 0.98rem; padding: 8px 12px; }
+  .hourly-day-shell--page{ min-height: 0; padding: 10px 18px 24px; }
 }
 .hourly-add-form{
   display: flex;

@@ -82,12 +82,12 @@ const WINDOW_IDS = new Set(DAY_WINDOWS.map((w) => w.id));
 export function loadHourlySchedule() {
   try {
     const raw = localStorage.getItem(HOURLY_SCHEDULE_STORAGE_KEY);
-    if (!raw) return { days: {} };
+    if (!raw) return { days: {}, headings: {} };
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return { days: {} };
+    if (!parsed || typeof parsed !== "object") return { days: {}, headings: {} };
     const days = parsed.days;
-    if (!days || typeof days !== "object") return { days: {} };
-    const out = { days: {} };
+    if (!days || typeof days !== "object") return { days: {}, headings: normalizeHeadings(parsed.headings) };
+    const out = { days: {}, headings: normalizeHeadings(parsed.headings) };
     for (const [k, day] of Object.entries(days)) {
       const blocks = Array.isArray(day?.blocks) ? day.blocks.map(normalizeBlock).filter(Boolean) : [];
       const windowNotes = normalizeWindowNotes(day?.windowNotes);
@@ -95,12 +95,26 @@ export function loadHourlySchedule() {
     }
     return out;
   } catch {
-    return { days: {} };
+    return { days: {}, headings: {} };
   }
 }
 
 export function saveHourlySchedule(state) {
   localStorage.setItem(HOURLY_SCHEDULE_STORAGE_KEY, JSON.stringify(state));
+}
+
+function headingKeyOk(id) {
+  return WINDOW_IDS.has(id) || id === "work";
+}
+
+function normalizeHeadings(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const out = {};
+  for (const key of [...WINDOW_IDS, "work"]) {
+    const t = String(raw[key] ?? "").trim().slice(0, 200);
+    if (t) out[key] = t;
+  }
+  return out;
 }
 
 function normalizeWindowNotes(raw) {
@@ -375,6 +389,92 @@ export function nowMinutesInPlanDay() {
 export function isWindowActiveNow(windowId, nowMin = nowMinutesInPlanDay()) {
   const w = getDayWindow(windowId);
   if (!w) return false;
-  if (w.id === "night") return nowMin >= 21 * 60 || nowMin < 2 * 60;
+  if (w.id === "night") return nowMin >= 21 * 60;
   return nowMin >= w.start && nowMin < w.end;
+}
+
+/** אחרי חצות (עד 02:00) נשארים ביום התכנון של אתמול */
+export function planMinutesNow(now = new Date()) {
+  const min = now.getHours() * 60 + now.getMinutes();
+  if (min < 2 * 60) return min + 24 * 60;
+  return min;
+}
+
+function ymd(dt) {
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function planDateKeyNow(now = new Date()) {
+  if (now.getHours() < 2) {
+    const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    return ymd(dt);
+  }
+  return ymd(now);
+}
+
+export function getWindowHeading(state, windowId) {
+  if (!headingKeyOk(windowId)) return "";
+  return String(state.headings?.[windowId] ?? "");
+}
+
+export function setWindowHeading(state, windowId, text) {
+  if (!headingKeyOk(windowId)) return;
+  if (!state.headings || typeof state.headings !== "object") state.headings = {};
+  const t = String(text ?? "").trim().slice(0, 200);
+  if (t) state.headings[windowId] = t;
+  else delete state.headings[windowId];
+}
+
+function ownWindowBlocks(state, dateKey, windowId) {
+  if (windowId === "work") return workBlocksForDay(state, dateKey);
+  return sortBlocks((state.days[dateKey]?.blocks ?? []).filter((b) => b.lane === "slot" && b.slot === windowId));
+}
+
+export function findPreviousWindowDay(state, beforeDateKey, windowId) {
+  if (!headingKeyOk(windowId)) return null;
+  const keys = Object.keys(state.days ?? {})
+    .filter((k) => k < beforeDateKey)
+    .sort()
+    .reverse();
+  for (const k of keys) {
+    if (ownWindowBlocks(state, k, windowId).length) return k;
+    if (String(state.days[k]?.windowNotes?.[windowId] ?? "").trim()) return k;
+  }
+  return null;
+}
+
+export function copyWindowTitlesFromDay(state, fromKey, toKey, windowId, newId) {
+  if (!headingKeyOk(windowId) || fromKey === toKey) return { copied: 0, skipped: 0 };
+  const src = ownWindowBlocks(state, fromKey, windowId);
+  const existing = new Set(ownWindowBlocks(state, toKey, windowId).map((b) => b.title));
+  let copied = 0;
+  let skipped = 0;
+  for (const b of src) {
+    if (existing.has(b.title)) {
+      skipped += 1;
+      continue;
+    }
+    const meta = windowId === "work" ? { lane: "work" } : { lane: "slot", slot: windowId };
+    const ok = addScheduleBlock(state, toKey, newId(), b.title, b.startMin, meta);
+    if (ok) {
+      copied += 1;
+      existing.add(b.title);
+    }
+  }
+  return { copied, skipped, fromKey };
+}
+
+export function nowAndNextOnDay(state, dateKey, nowPlanMin) {
+  const timed = blocksForDay(state, dateKey).filter((b) => blockHasTime(b) && !b.done);
+  const current = [...timed].reverse().find((b) => b.startMin <= nowPlanMin) || null;
+  const next = timed.find((b) => b.startMin > nowPlanMin) || null;
+  const winNow = DAY_WINDOWS.find((w) => {
+    if (w.id === "night") return nowPlanMin >= 21 * 60 && nowPlanMin < 26 * 60;
+    return nowPlanMin >= w.start && nowPlanMin < w.end;
+  }) || null;
+  const winNext = DAY_WINDOWS.find((w) => w.start > nowPlanMin) || null;
+  return { current, next, winNow, winNext };
 }

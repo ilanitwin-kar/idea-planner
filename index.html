@@ -543,15 +543,24 @@
           </div>
 
           <div id="hourlyMapView" class="hourly-map">
-            <p class="hourly-lead">לחצי על חלון — נפתח דף גדול לכתוב בו. העסק תמיד למטה, גם בלי שעה.</p>
+            <p class="hourly-lead">לחצי על חלון — נפתח דף משלו לכתוב בו. העסק תמיד למטה, גם בלי שעה.</p>
+            <div id="hourlyNowNext" class="hourly-now-next" hidden></div>
             <div id="hourlyWindowGrid" class="hourly-window-grid" aria-label="חלונות היום"></div>
             <div id="hourlyWorkMap" class="hourly-work-map" aria-label="עסק"></div>
             <div id="hourlyScheduleProgress" class="daily-progress"></div>
           </div>
 
-          <div id="hourlySlotView" class="hourly-slot hidden">
-            <button type="button" id="hourlySlotBack" class="btn btn-ghost hourly-slot-back">כל היום</button>
+          <div id="hourlySlotView" class="hourly-slot hidden" tabindex="-1">
+            <button type="button" id="hourlySlotBack" class="btn btn-ghost hourly-slot-back">← כל היום</button>
             <header id="hourlySlotHead" class="hourly-slot-head"></header>
+            <label class="hourly-heading-wrap">
+              <span class="hourly-note-caption">כותרת שחוזרת — אותו דבר כל יום</span>
+              <input id="hourlySlotHeading" class="input hourly-slot-heading" type="text" maxlength="200" autocomplete="off" placeholder="למשל: גמרא · אנגלית · מסמך לקוח…" />
+            </label>
+            <div class="hourly-repeat-row">
+              <button type="button" id="hourlyRepeatBtn" class="btn btn-ghost hourly-repeat-btn hidden">חזרה — אותן כותרות מפעם קודמת</button>
+              <p id="hourlyRepeatHint" class="hourly-repeat-hint"></p>
+            </div>
             <label class="hourly-note-wrap">
               <span id="hourlyNoteCaption" class="hourly-note-caption"></span>
               <textarea id="hourlySlotNote" class="hourly-slot-note" rows="10" maxlength="8000" autocomplete="off"></textarea>
