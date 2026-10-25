@@ -2374,15 +2374,48 @@ body.app-mode-home .top-menu-dialog{
   padding: 12px 14px;
   min-height: 48px;
 }
-.hourly-repeat-row{
+.hourly-repeat-panel{
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  align-items: stretch;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-2);
 }
-.hourly-repeat-btn{
+.hourly-repeat-days{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hourly-day-chip{
+  appearance: none;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+  background: #fff;
+  font: inherit;
   font-weight: 800;
-  min-height: 44px;
+  color: var(--text);
+  cursor: pointer;
+}
+.hourly-day-chip.is-on{
+  background: var(--accent-pink-soft);
+  border-color: rgba(196, 30, 58, 0.4);
+  color: var(--heading);
+}
+.hourly-repeat-weeks-wrap{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: var(--heading);
+}
+.hourly-repeat-weeks-wrap .select{
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .hourly-repeat-hint{
   margin: 0;

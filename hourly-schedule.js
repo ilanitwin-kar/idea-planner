@@ -446,6 +446,58 @@ export function findPreviousWindowDay(state, beforeDateKey, windowId) {
   return null;
 }
 
+export const WEEKDAYS_HE = [
+  { id: 0, label: "א׳" },
+  { id: 1, label: "ב׳" },
+  { id: 2, label: "ג׳" },
+  { id: 3, label: "ד׳" },
+  { id: 4, label: "ה׳" },
+  { id: 5, label: "ו׳" },
+  { id: 6, label: "ש׳" },
+];
+
+export function weekdayOfDateKey(dateKey) {
+  const [y, m, d] = String(dateKey).split("-").map(Number);
+  if (!y || !m || !d) return 0;
+  return new Date(y, m - 1, d).getDay();
+}
+
+function addDaysKey(dateKey, deltaDays) {
+  const [y, m, d] = String(dateKey).split("-").map(Number);
+  const x = new Date(y, m - 1, d);
+  x.setDate(x.getDate() + Number(deltaDays) || 0);
+  const yy = x.getFullYear();
+  const mm = String(x.getMonth() + 1).padStart(2, "0");
+  const dd = String(x.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+export function dateKeysForRepeat(fromKey, weekdayIds, weeks) {
+  const want = new Set((weekdayIds || []).map(Number).filter((n) => n >= 0 && n <= 6));
+  const w = Math.max(1, Math.min(12, Math.round(Number(weeks) || 1)));
+  const out = [];
+  for (let i = 0; i < w * 7; i += 1) {
+    const k = addDaysKey(fromKey, i);
+    if (want.has(weekdayOfDateKey(k))) out.push(k);
+  }
+  return out;
+}
+
+export function repeatWindowToWeekdays(state, fromKey, windowId, weekdayIds, weeks, newId) {
+  const keys = dateKeysForRepeat(fromKey, weekdayIds, weeks).filter((k) => k !== fromKey);
+  const sourceCount = ownWindowBlocks(state, fromKey, windowId).length;
+  let copied = 0;
+  let skipped = 0;
+  let days = 0;
+  for (const k of keys) {
+    const r = copyWindowTitlesFromDay(state, fromKey, k, windowId, newId);
+    copied += r.copied;
+    skipped += r.skipped;
+    if (r.copied) days += 1;
+  }
+  return { copied, skipped, days, keys, sourceCount };
+}
+
 export function copyWindowTitlesFromDay(state, fromKey, toKey, windowId, newId) {
   if (!headingKeyOk(windowId) || fromKey === toKey) return { copied: 0, skipped: 0 };
   const src = ownWindowBlocks(state, fromKey, windowId);
