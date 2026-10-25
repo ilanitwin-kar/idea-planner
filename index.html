@@ -525,8 +525,9 @@
 
     <section id="viewHourlySchedule" class="daily-page hidden" aria-label="לו״ז יומי">
       <div class="daily-inner">
-        <div class="daily-inner-surface">
-          <div class="daily-hero daily-hero--compact">
+        <div class="daily-inner-surface hourly-day-shell">
+          <div class="daily-hero daily-hero--compact hourly-hero">
+            <div class="hourly-kicker">היום שלי</div>
             <div class="daily-day-nav daily-day-nav--inline" role="toolbar" aria-label="מעבר בין ימים">
               <button type="button" id="hourlyScheduleDayPrev" class="btn btn-ghost daily-day-nav-arrow" aria-label="יום לפני">‹</button>
               <div id="hourlyScheduleDateTitle" class="daily-date-title daily-date-title--compact"></div>
@@ -536,31 +537,44 @@
             <input id="hourlyScheduleDateInput" class="hidden" type="date" tabindex="-1" aria-hidden="true" />
           </div>
 
-          <form id="hourlyScheduleAddForm" class="hourly-add-form" autocomplete="off">
-            <input id="hourlyScheduleTitle" class="input" type="text" maxlength="200" placeholder="מה לעשות מחר / היום…" required />
-            <label class="checkline hourly-has-time">
-              <input id="hourlyAddHasTime" type="checkbox" />
-              עם שעת תזכורת
-            </label>
-            <div id="hourlyAddTimeRow" class="hourly-times-row hidden" role="group" aria-label="שעת תזכורת">
-              <div class="hourly-time-chip">
-                <span>ב־</span>
-                <select id="hourlyScheduleStartH" class="select hourly-hm" aria-label="שעה"></select>
-                <span class="hourly-hm-colon" aria-hidden="true">:</span>
-                <select id="hourlyScheduleStartM" class="select hourly-hm" aria-label="דקות"></select>
-              </div>
-            </div>
-            <p class="hourly-add-hint">בלי שעה — תזכורת ב־10:00 עם כל הרשימה. עם שעה — תזכורת באותו רגע.</p>
-            <button class="btn" type="submit">הוספה</button>
-          </form>
-
           <div id="hourlyPushBanner" class="hourly-push-banner">
             <p id="hourlyPushBannerHint" class="hourly-push-banner-hint"></p>
             <button id="hourlyPushEnableBtn" class="btn" type="button">הפעלת התראות</button>
           </div>
 
-          <div id="hourlyScheduleList" class="hourly-task-list" aria-label="משימות הלו״ז"></div>
-          <div id="hourlyScheduleProgress" class="daily-progress"></div>
+          <div id="hourlyMapView" class="hourly-map">
+            <p class="hourly-lead">לחצי על חלון — נפתח דף גדול לכתוב בו. העסק תמיד למטה, גם בלי שעה.</p>
+            <div id="hourlyWindowGrid" class="hourly-window-grid" aria-label="חלונות היום"></div>
+            <div id="hourlyWorkMap" class="hourly-work-map" aria-label="עסק"></div>
+            <div id="hourlyScheduleProgress" class="daily-progress"></div>
+          </div>
+
+          <div id="hourlySlotView" class="hourly-slot hidden">
+            <button type="button" id="hourlySlotBack" class="btn btn-ghost hourly-slot-back">כל היום</button>
+            <header id="hourlySlotHead" class="hourly-slot-head"></header>
+            <label class="hourly-note-wrap">
+              <span id="hourlyNoteCaption" class="hourly-note-caption"></span>
+              <textarea id="hourlySlotNote" class="hourly-slot-note" rows="10" maxlength="8000" autocomplete="off"></textarea>
+            </label>
+            <form id="hourlyScheduleAddForm" class="hourly-add-form hourly-slot-add" autocomplete="off">
+              <input id="hourlyScheduleTitle" class="input" type="text" maxlength="200" placeholder="שורה לרשימה…" required />
+              <label class="checkline hourly-has-time">
+                <input id="hourlyAddHasTime" type="checkbox" />
+                עם שעת תזכורת
+              </label>
+              <div id="hourlyAddTimeRow" class="hourly-times-row hidden" role="group" aria-label="שעת תזכורת">
+                <div class="hourly-time-chip">
+                  <span>ב־</span>
+                  <select id="hourlyScheduleStartH" class="select hourly-hm" aria-label="שעה"></select>
+                  <span class="hourly-hm-colon" aria-hidden="true">:</span>
+                  <select id="hourlyScheduleStartM" class="select hourly-hm" aria-label="דקות"></select>
+                </div>
+              </div>
+              <p id="hourlySlotAddHint" class="hourly-add-hint">בלי שעה — נשאר כאן. עם שעה — גם תזכורת באותו רגע.</p>
+              <button class="btn" type="submit">הוספה לרשימה</button>
+            </form>
+            <div id="hourlyScheduleList" class="hourly-task-list hourly-task-list--roomy" aria-label="רשימת החלון"></div>
+          </div>
         </div>
       </div>
     </section>

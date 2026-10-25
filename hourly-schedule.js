@@ -1,7 +1,83 @@
-/** לו״ז יומי — רשימת משימות ליום, עם שעת התחלה אופציונלית ותתי־משימות */
+/** לו״ז יומי — חלונות שעה, רשימת עסק, ותזכורות אופציונליות */
 
 export const HOURLY_SCHEDULE_STORAGE_KEY = "idea-planner:hourly-schedule:v1";
 export const HOURLY_DIGEST_MIN = 10 * 60;
+
+/** עד 02:00 בלילה שאחרי (21:00–02:00), בדקות מתחילת יום התכנון */
+export const HOURLY_MAX_MIN = 26 * 60;
+
+export const DAY_WINDOWS = [
+  {
+    id: "morning",
+    label: "בוקר בממלכה",
+    sub: "עשייה שקטה — מה שבאמת צריך לזוז",
+    from: "09:00",
+    to: "12:00",
+    kind: "focus",
+    start: 9 * 60,
+    end: 12 * 60,
+    noteHint: "מה היום בבוקר: לימוד, מסמך, שיחה, רשימת עמודים…",
+    addPlaceholder: "שורת עשייה לבוקר…",
+  },
+  {
+    id: "midday",
+    label: "צהריים בממלכה",
+    sub: "המשך עשייה עד שתיים",
+    from: "12:00",
+    to: "14:00",
+    kind: "focus",
+    start: 12 * 60,
+    end: 14 * 60,
+    noteHint: "מה ממשיכים עד שתיים…",
+    addPlaceholder: "שורת עשייה לצהריים…",
+  },
+  {
+    id: "lunch",
+    label: "צהריים בבית",
+    sub: "אוכל, שנ״צ, מה שמכינים היום",
+    from: "15:00",
+    to: "18:00",
+    kind: "life",
+    start: 15 * 60,
+    end: 18 * 60,
+    noteHint: "מה מבשלים / מה אוכלים / מתי שנ״צ…",
+    addPlaceholder: "מנה, קניות למטבח, תזכורת לשנ״צ…",
+  },
+  {
+    id: "house",
+    label: "הבית מלא",
+    sub: "לא שקט — ועדיין יש מקום לרשום",
+    from: "18:00",
+    to: "21:00",
+    kind: "life",
+    start: 18 * 60,
+    end: 21 * 60,
+    noteHint: "מה קורה כשהבית מלא: סידור, ילדים, מה לא לשכוח…",
+    addPlaceholder: "מה לזכור בערב…",
+  },
+  {
+    id: "night",
+    label: "לילה בממלכה",
+    sub: "עשייה ארוכה — חוצה חצות",
+    from: "21:00",
+    to: "02:00",
+    kind: "focus",
+    start: 21 * 60,
+    end: 26 * 60,
+    noteHint: "מה בלילה: לימוד, עסק, רשימה ארוכה…",
+    addPlaceholder: "שורת עשייה ללילה…",
+  },
+];
+
+export const WORK_LANE = {
+  id: "work",
+  label: "עסק",
+  sub: "רשימה חיה — עם וי, בלי שעה או עם שעה",
+  noteHint: "הערות לעסק להיום — מה שצריך לראות במבט אחד.",
+  addPlaceholder: "משימת עסק…",
+};
+
+const WINDOW_IDS = new Set(DAY_WINDOWS.map((w) => w.id));
 
 export function loadHourlySchedule() {
   try {
@@ -14,7 +90,8 @@ export function loadHourlySchedule() {
     const out = { days: {} };
     for (const [k, day] of Object.entries(days)) {
       const blocks = Array.isArray(day?.blocks) ? day.blocks.map(normalizeBlock).filter(Boolean) : [];
-      if (blocks.length) out.days[k] = { blocks };
+      const windowNotes = normalizeWindowNotes(day?.windowNotes);
+      if (blocks.length || Object.keys(windowNotes).length) out.days[k] = { blocks, windowNotes };
     }
     return out;
   } catch {
@@ -26,11 +103,26 @@ export function saveHourlySchedule(state) {
   localStorage.setItem(HOURLY_SCHEDULE_STORAGE_KEY, JSON.stringify(state));
 }
 
+function normalizeWindowNotes(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const out = {};
+  for (const key of [...WINDOW_IDS, "work"]) {
+    const t = String(raw[key] ?? "").trim();
+    if (t) out[key] = String(raw[key]).slice(0, 8000);
+  }
+  return out;
+}
+
 function normalizeSub(s) {
   if (!s || typeof s !== "object" || !s.id) return null;
   const title = String(s.title ?? s.text ?? "").trim();
   if (!title) return null;
   return { id: String(s.id), title, done: !!s.done };
+}
+
+function validSlot(id) {
+  const s = String(id ?? "");
+  return WINDOW_IDS.has(s) ? s : null;
 }
 
 function normalizeBlock(b) {
@@ -40,20 +132,44 @@ function normalizeBlock(b) {
   const startRaw = b.startMin;
   const startMin = startRaw == null || startRaw === "" ? null : clampMinutes(startRaw);
   const subs = Array.isArray(b.subs) ? b.subs.map(normalizeSub).filter(Boolean) : [];
-  return { id: String(b.id), title, startMin, done: !!b.done, subs };
+  let slot = validSlot(b.slot);
+  let lane = b.lane === "work" ? "work" : b.lane === "slot" ? "slot" : null;
+  if (!lane) {
+    if (slot) lane = "slot";
+    else if (startMin == null) lane = "work";
+    else {
+      slot = windowIdForStartMin(startMin);
+      lane = slot ? "slot" : "work";
+    }
+  }
+  if (lane === "work") slot = null;
+  if (lane === "slot" && !slot) {
+    slot = startMin != null ? windowIdForStartMin(startMin) : null;
+    if (!slot) lane = "work";
+  }
+  return { id: String(b.id), title, startMin, done: !!b.done, subs, lane, slot };
 }
 
 function ensureDay(state, dateKey) {
-  if (!state.days[dateKey]) state.days[dateKey] = { blocks: [] };
+  if (!state.days[dateKey]) state.days[dateKey] = { blocks: [], windowNotes: {} };
   const day = state.days[dateKey];
   if (!Array.isArray(day.blocks)) day.blocks = [];
+  if (!day.windowNotes || typeof day.windowNotes !== "object") day.windowNotes = {};
   return day;
+}
+
+function pruneDay(state, dateKey) {
+  const day = state.days[dateKey];
+  if (!day) return;
+  const hasBlocks = Array.isArray(day.blocks) && day.blocks.length > 0;
+  const hasNotes = day.windowNotes && Object.values(day.windowNotes).some((n) => String(n ?? "").trim());
+  if (!hasBlocks && !hasNotes) delete state.days[dateKey];
 }
 
 function clampMinutes(m) {
   const x = Number(m);
   if (!Number.isFinite(x)) return 0;
-  return Math.max(0, Math.min(24 * 60 - 1, Math.round(x)));
+  return Math.max(0, Math.min(HOURLY_MAX_MIN, Math.round(x)));
 }
 
 export function blockHasTime(blk) {
@@ -71,7 +187,9 @@ export function timeStringToMinutes(hhmm) {
 }
 
 export function minutesToTimeString(totalMin) {
-  const m = clampMinutes(totalMin);
+  const x = Number(totalMin);
+  if (!Number.isFinite(x)) return "00:00";
+  const m = ((Math.round(x) % (24 * 60)) + 24 * 60) % (24 * 60);
   const h = Math.floor(m / 60);
   const min = m % 60;
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
@@ -79,6 +197,20 @@ export function minutesToTimeString(totalMin) {
 
 export function formatMinutesHebrew(totalMin) {
   return minutesToTimeString(totalMin);
+}
+
+export function windowIdForStartMin(startMin) {
+  if (!Number.isFinite(startMin)) return null;
+  const m = Number(startMin);
+  if (m >= 0 && m < 2 * 60) return "night";
+  for (const w of DAY_WINDOWS) {
+    if (m >= w.start && m < w.end) return w.id;
+  }
+  return null;
+}
+
+export function getDayWindow(id) {
+  return DAY_WINDOWS.find((w) => w.id === id) || null;
 }
 
 function sortBlocks(blocks) {
@@ -96,12 +228,23 @@ function resortDay(day) {
   day.blocks = sortBlocks(day.blocks);
 }
 
-export function addScheduleBlock(state, dateKey, id, title, startMin = null) {
+export function addScheduleBlock(state, dateKey, id, title, startMin = null, meta = null) {
   const day = ensureDay(state, dateKey);
   const t = String(title ?? "").trim();
   if (!t) return false;
   const start = startMin == null || startMin === "" ? null : clampMinutes(startMin);
-  day.blocks.push({ id, title: t, startMin: start, done: false, subs: [] });
+  const lane = meta?.lane === "work" ? "work" : "slot";
+  const slot = lane === "slot" ? validSlot(meta?.slot) : null;
+  if (lane === "slot" && !slot) return false;
+  day.blocks.push({
+    id,
+    title: t,
+    startMin: start,
+    done: false,
+    subs: [],
+    lane,
+    slot,
+  });
   resortDay(day);
   return true;
 }
@@ -120,6 +263,9 @@ export function updateScheduleBlock(state, dateKey, blockId, patch) {
     blk.startMin = patch.startMin == null || patch.startMin === "" ? null : clampMinutes(patch.startMin);
   }
   if ("done" in patch) blk.done = !!patch.done;
+  if ("lane" in patch) blk.lane = patch.lane === "work" ? "work" : "slot";
+  if ("slot" in patch) blk.slot = validSlot(patch.slot);
+  if (blk.lane === "work") blk.slot = null;
   if (!Array.isArray(blk.subs)) blk.subs = [];
   resortDay(day);
   return true;
@@ -129,7 +275,7 @@ export function deleteScheduleBlock(state, dateKey, blockId) {
   const day = state.days[dateKey];
   if (!day?.blocks) return;
   day.blocks = day.blocks.filter((x) => x.id !== blockId);
-  if (day.blocks.length === 0) delete state.days[dateKey];
+  pruneDay(state, dateKey);
 }
 
 export function toggleScheduleBlockDone(state, dateKey, blockId) {
@@ -161,8 +307,37 @@ export function deleteScheduleSub(state, dateKey, blockId, subId) {
   blk.subs = blk.subs.filter((s) => s.id !== subId);
 }
 
+export function getWindowNote(state, dateKey, windowId) {
+  return String(state.days[dateKey]?.windowNotes?.[windowId] ?? "");
+}
+
+export function setWindowNote(state, dateKey, windowId, text) {
+  const key = WINDOW_IDS.has(windowId) || windowId === "work" ? windowId : null;
+  if (!key) return;
+  const day = ensureDay(state, dateKey);
+  const t = String(text ?? "").slice(0, 8000);
+  if (t.trim()) day.windowNotes[key] = t;
+  else delete day.windowNotes[key];
+  pruneDay(state, dateKey);
+}
+
 export function blocksForDay(state, dateKey) {
   return sortBlocks(state.days[dateKey]?.blocks ?? []);
+}
+
+export function workBlocksForDay(state, dateKey) {
+  return sortBlocks((state.days[dateKey]?.blocks ?? []).filter((b) => b.lane === "work"));
+}
+
+export function blocksForWindow(state, dateKey, windowId) {
+  const all = state.days[dateKey]?.blocks ?? [];
+  return sortBlocks(
+    all.filter((b) => {
+      if (b.lane === "slot" && b.slot === windowId) return true;
+      if (b.lane === "work" && blockHasTime(b) && windowIdForStartMin(b.startMin) === windowId) return true;
+      return false;
+    }),
+  );
 }
 
 export function scheduleDayProgress(state, dateKey) {
@@ -190,4 +365,16 @@ export function hourlyBlockFireAtMs(dateKey, startMin) {
   dt.setMinutes(Number(startMin) || 0);
   const t = dt.getTime();
   return Number.isFinite(t) ? t : null;
+}
+
+export function nowMinutesInPlanDay() {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+export function isWindowActiveNow(windowId, nowMin = nowMinutesInPlanDay()) {
+  const w = getDayWindow(windowId);
+  if (!w) return false;
+  if (w.id === "night") return nowMin >= 21 * 60 || nowMin < 2 * 60;
+  return nowMin >= w.start && nowMin < w.end;
 }
