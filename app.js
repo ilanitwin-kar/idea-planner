@@ -70,6 +70,7 @@ import {
   addScheduleBlock,
   updateScheduleBlock,
   deleteScheduleBlock,
+  moveScheduleBlock,
   toggleScheduleBlockDone,
   addScheduleSub,
   toggleScheduleSubDone,
@@ -1515,6 +1516,18 @@ function getHourlyHmPair(prefix) {
   return min;
 }
 
+function openHourlyPostponeDialog(dateKey, blockId) {
+  const blk = hourlySchedule.days[dateKey]?.blocks?.find((x) => x.id === blockId);
+  if (!blk) return;
+  const dlg = document.getElementById("hourlyPostponeDialog");
+  if (!(dlg instanceof HTMLDialogElement)) return;
+  const dateEl = document.getElementById("hourlyPostponeDate");
+  if (dateEl instanceof HTMLInputElement) dateEl.value = addDaysToDateKey(dateKey, 1);
+  dlg.dataset.editDateKey = dateKey;
+  dlg.dataset.editBlockId = blockId;
+  dlg.showModal();
+}
+
 function openHourlyScheduleEditDialog(dateKey, blockId) {
   const blk = hourlySchedule.days[dateKey]?.blocks?.find((x) => x.id === blockId);
   if (!blk) return;
@@ -1573,6 +1586,7 @@ function hourlyTaskCardHtml(viewKey, blk, fromWork = false, mark = "") {
           <span class="daily-item-text">${escapeHtml(blk.title)}</span>
         </label>
         ${timeBadge}
+        <button type="button" class="btn btn-ghost hourly-postpone-btn" data-action="hourly-postpone-block" data-date-key="${escapeHtml(viewKey)}" data-block-id="${escapeHtml(blk.id)}">נדחה לי</button>
         <div class="daily-item-actions">
           <details class="daily-kebab">
             <summary class="daily-kebab-summary" aria-label="פעולות למשימה">⋮</summary>
@@ -5303,6 +5317,11 @@ function wireGlobalHandlers() {
       }
       return;
     }
+    const postpone = e.target.closest("[data-action='hourly-postpone-block']");
+    if (postpone) {
+      openHourlyPostponeDialog(postpone.getAttribute("data-date-key"), postpone.getAttribute("data-block-id"));
+      return;
+    }
     const edit = e.target.closest("[data-action='hourly-edit-block']");
     if (edit) {
       openHourlyScheduleEditDialog(edit.dataset.dateKey, edit.dataset.blockId);
@@ -5331,6 +5350,33 @@ function wireGlobalHandlers() {
     if (!dk || !id || !title) return;
     addScheduleSub(hourlySchedule, dk, id, uid("hss"), title);
     persistHourlySchedule();
+    render();
+  });
+
+  document.getElementById("hourlyPostponeSave")?.addEventListener("click", () => {
+    const dlg = document.getElementById("hourlyPostponeDialog");
+    if (!(dlg instanceof HTMLDialogElement)) return;
+    const fromKey = dlg.dataset.editDateKey;
+    const blockId = dlg.dataset.editBlockId;
+    const toKey = document.getElementById("hourlyPostponeDate") instanceof HTMLInputElement
+      ? document.getElementById("hourlyPostponeDate").value
+      : "";
+    if (!fromKey || !blockId || !/^\d{4}-\d{2}-\d{2}$/.test(toKey)) {
+      toast("נא לבחור יום.");
+      return;
+    }
+    if (toKey === fromKey) {
+      toast("בחרי יום אחר.");
+      return;
+    }
+    const ok = moveScheduleBlock(hourlySchedule, fromKey, toKey, blockId);
+    if (!ok) {
+      toast("לא נדחה.");
+      return;
+    }
+    persistHourlySchedule();
+    dlg.close();
+    toast(`נדחה ל־${formatHebrewDateShort(toKey)}`);
     render();
   });
 

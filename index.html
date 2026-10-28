@@ -552,25 +552,8 @@
           <div id="hourlySlotView" class="hourly-slot hidden" tabindex="-1">
             <button type="button" id="hourlySlotBack" class="btn btn-ghost hourly-slot-back">← כל היום</button>
             <header id="hourlySlotHead" class="hourly-slot-head"></header>
-            <div class="hourly-repeat-panel">
-              <div class="hourly-note-caption">חזרה</div>
-              <div id="hourlyRepeatDays" class="hourly-repeat-days" role="group" aria-label="ימים בשבוע"></div>
-              <label class="hourly-repeat-weeks-wrap">
-                למשך
-                <select id="hourlyRepeatWeeks" class="select" aria-label="משך החזרה">
-                  <option value="1">שבוע</option>
-                  <option value="2">שבועיים</option>
-                  <option value="4">חודש (4 שבועות)</option>
-                  <option value="8">חודשיים</option>
-                </select>
-              </label>
-              <button type="button" id="hourlyRepeatApply" class="btn">החילו חזרה</button>
-            </div>
-            <label class="hourly-note-wrap">
-              <textarea id="hourlySlotNote" class="hourly-slot-note" rows="10" maxlength="8000" autocomplete="off"></textarea>
-            </label>
             <form id="hourlyScheduleAddForm" class="hourly-add-form hourly-slot-add" autocomplete="off">
-              <input id="hourlyScheduleTitle" class="input" type="text" maxlength="200" required />
+              <textarea id="hourlyScheduleTitle" class="input hourly-main-task" rows="3" maxlength="500" required></textarea>
               <label class="checkline hourly-has-time">
                 <input id="hourlyAddHasTime" type="checkbox" />
                 שעה
@@ -592,10 +575,38 @@
               <button class="btn" type="submit">הוספה</button>
             </form>
             <div id="hourlyScheduleList" class="hourly-task-list hourly-task-list--roomy" aria-label="רשימת החלון"></div>
+            <div class="hourly-repeat-panel">
+              <div class="hourly-note-caption">חזרה</div>
+              <div id="hourlyRepeatDays" class="hourly-repeat-days" role="group" aria-label="ימים בשבוע"></div>
+              <label class="hourly-repeat-weeks-wrap">
+                למשך
+                <select id="hourlyRepeatWeeks" class="select" aria-label="משך החזרה">
+                  <option value="1">שבוע</option>
+                  <option value="2">שבועיים</option>
+                  <option value="4">חודש (4 שבועות)</option>
+                  <option value="8">חודשיים</option>
+                </select>
+              </label>
+              <button type="button" id="hourlyRepeatApply" class="btn">החילו חזרה</button>
+            </div>
+            <label class="hourly-note-wrap">
+              <textarea id="hourlySlotNote" class="hourly-slot-note" rows="6" maxlength="8000" autocomplete="off"></textarea>
+            </label>
           </div>
         </div>
       </div>
     </section>
+
+    <dialog id="hourlyPostponeDialog" class="dialog">
+      <form method="dialog" class="dialog-inner" id="hourlyPostponeForm">
+        <div class="dialog-title">נדחה לי</div>
+        <input id="hourlyPostponeDate" class="input" type="date" required />
+        <div class="dialog-actions">
+          <button id="hourlyPostponeSave" class="btn" type="button">נדחה</button>
+          <button class="btn btn-ghost" value="cancel" type="submit">ביטול</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="hourlyScheduleEditDialog" class="dialog">
       <form method="dialog" class="dialog-inner" id="hourlyScheduleEditForm">

@@ -303,6 +303,20 @@ export function deleteScheduleBlock(state, dateKey, blockId) {
   pruneDay(state, dateKey);
 }
 
+export function moveScheduleBlock(state, fromKey, toKey, blockId) {
+  if (!fromKey || !toKey || fromKey === toKey || !blockId) return false;
+  const src = state.days[fromKey];
+  if (!src?.blocks) return false;
+  const idx = src.blocks.findIndex((x) => x.id === blockId);
+  if (idx < 0) return false;
+  const [blk] = src.blocks.splice(idx, 1);
+  pruneDay(state, fromKey);
+  const dest = ensureDay(state, toKey);
+  dest.blocks.push(blk);
+  resortDay(dest);
+  return true;
+}
+
 export function toggleScheduleBlockDone(state, dateKey, blockId) {
   const day = state.days[dateKey];
   const blk = day?.blocks?.find((x) => x.id === blockId);

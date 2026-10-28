@@ -2632,7 +2632,7 @@ body.app-mode-home .top-menu-dialog{
 }
 .hourly-slot-note{
   width: 100%;
-  min-height: 220px;
+  min-height: 120px;
   padding: 18px 16px;
   border-radius: 18px;
   border: 1px solid var(--border-soft);
@@ -2658,7 +2658,7 @@ body.app-mode-home .top-menu-dialog{
   .hourly-win-range{ font-size: 1.02rem; }
   .hourly-win-title, .hourly-work-title{ font-size: 1.22rem; }
   .hourly-slot-title{ font-size: 1.7rem; }
-  .hourly-slot-note{ min-height: 280px; }
+  .hourly-slot-note{ min-height: 120px; }
 }
 @media (min-width: 768px){
   #viewHourlySchedule{
@@ -2731,6 +2731,20 @@ body.app-mode-home .top-menu-dialog{
   min-width: 0;
   padding: 12px 14px;
   font-size: 1.08rem;
+}
+.hourly-main-task{
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.45;
+}
+.hourly-postpone-btn{
+  flex: 0 0 auto;
+  font-weight: 800;
+  min-height: 36px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
 }
 .hourly-add-form .input{ flex: 1 1 140px; min-width: 0; padding: 8px 10px; font-size: 0.95rem; }
 .hourly-add-hint{
@@ -2835,6 +2849,7 @@ body.app-mode-home .top-menu-dialog{
 }
 .hourly-task-head{
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
