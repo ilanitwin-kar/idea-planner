@@ -143,6 +143,15 @@ import {
   kitchenRecipeLines,
   replaceRecipeLine,
   removeRecipeLine,
+  recipeIngredientSections,
+  recipeBakeHeadline,
+  recipeBakeTempOptions,
+  RECIPE_PAN_SHAPES,
+  RECIPE_BAKE_MODES,
+  RECIPE_MIX_TOOLS,
+  RECIPE_BOWL_KINDS,
+  emptyMixGroup,
+  emptyBowl,
   deleteRecipe,
   recipeMatchesQuery,
   recipePlainText,
@@ -697,12 +706,17 @@ const kitchenStepDone = new Set();
 let kitchenWakeLock = null;
 let kitchenEditing = null;
 
-function remapKitchenDoneAfterDelete(set, removedIndex) {
+function remapKitchenDoneAfterDelete(set, section, removedIndex) {
   const next = new Set();
+  const prefix = section == null ? "" : `${section}::`;
   for (const k of set) {
-    const n = Number(k);
+    if (prefix && !String(k).startsWith(prefix)) {
+      next.add(k);
+      continue;
+    }
+    const n = prefix ? Number(String(k).slice(prefix.length)) : Number(k);
     if (!Number.isInteger(n) || n === removedIndex) continue;
-    next.add(String(n > removedIndex ? n - 1 : n));
+    next.add(prefix ? `${prefix}${n > removedIndex ? n - 1 : n}` : String(n > removedIndex ? n - 1 : n));
   }
   set.clear();
   for (const k of next) set.add(k);
@@ -751,12 +765,13 @@ function closeRecipeKitchen() {
   renderRecipeKitchen();
 }
 
-function kitchenLineHtml(kind, i, text, done, important) {
+function kitchenLineHtml(kind, i, text, done, important, num = null) {
   const editing = kitchenEditing && kitchenEditing.kind === kind && kitchenEditing.i === i;
   const star =
     kind === "step"
       ? `<button type="button" class="recipe-kitchen-star" data-action="recipe-kitchen-important" data-i="${i}" aria-pressed="${important ? "true" : "false"}">!</button>`
       : "";
+  const n = num != null ? `<span class="recipe-kitchen-n">${num}.</span>` : "";
   if (editing) {
     return `<div class="recipe-kitchen-line is-editing" data-k="${kind}" data-i="${i}">
       <textarea class="textarea recipe-kitchen-line-edit" data-action="recipe-kitchen-line-text" data-k="${kind}" data-i="${i}" rows="3">${escapeHtml(text)}</textarea>
@@ -767,7 +782,7 @@ function kitchenLineHtml(kind, i, text, done, important) {
     ${star}
     <label class="recipe-kitchen-check">
       <input type="checkbox" data-action="recipe-kitchen-check" data-k="${kind}" data-i="${i}" ${done ? "checked" : ""}>
-      <span>${escapeHtml(text)}</span>
+      ${n}<span>${escapeHtml(text)}</span>
     </label>
     <span class="recipe-kitchen-line-actions">
       <button type="button" class="btn btn-ghost" data-action="recipe-kitchen-edit-line" data-k="${kind}" data-i="${i}">עריכה</button>
@@ -807,18 +822,40 @@ function renderRecipeKitchen() {
   if (subEl instanceof HTMLInputElement && document.activeElement !== subEl) {
     subEl.value = rec.subtitle ?? "";
   }
+  const metaEl = document.getElementById("recipeKitchenMeta");
+  if (metaEl) {
+    const bake = recipeBakeHeadline(rec);
+    metaEl.textContent = bake;
+    metaEl.hidden = !bake;
+  }
   const ingsRoot = document.getElementById("recipeKitchenIngs");
   if (ingsRoot) {
-    ingsRoot.innerHTML = kitchenRecipeLines(rec.ingredients)
-      .map((row) => kitchenLineHtml("ing", row.i, row.text, kitchenIngDone.has(String(row.i)), false))
+    ingsRoot.innerHTML = recipeIngredientSections(rec)
+      .map((sec) => {
+        const rows = sec.lines
+          .map((row) =>
+            kitchenLineHtml(sec.key, row.i, row.text, kitchenIngDone.has(`${sec.key}::${row.i}`), false),
+          )
+          .join("");
+        return `<h2 class="recipe-kitchen-h">${escapeHtml(sec.heading)}</h2>${rows}`;
+      })
       .join("");
   }
   const stepsRoot = document.getElementById("recipeKitchenSteps");
   const imp = new Set(rec.importantSteps ?? []);
   if (stepsRoot) {
     stepsRoot.innerHTML = kitchenRecipeLines(rec.steps)
-      .map((row) => kitchenLineHtml("step", row.i, row.text, kitchenStepDone.has(String(row.i)), imp.has(row.i)))
+      .map((row, n) =>
+        kitchenLineHtml("step", row.i, row.text, kitchenStepDone.has(String(row.i)), imp.has(row.i), n + 1),
+      )
       .join("");
+  }
+  const tipsWrap = document.getElementById("recipeKitchenTipsWrap");
+  const tipsEl = document.getElementById("recipeKitchenTips");
+  const tips = String(rec.notes ?? "").trim();
+  if (tipsWrap && tipsEl) {
+    tipsWrap.classList.toggle("hidden", !tips);
+    tipsEl.textContent = tips;
   }
   const noteEl = document.getElementById("recipeKitchenNote");
   if (noteEl instanceof HTMLTextAreaElement && document.activeElement !== noteEl) {
@@ -2026,6 +2063,94 @@ function openLunchRecipeDialog(dishId) {
   openRecipeEditor({ dishId, title: dish?.name ?? "" });
 }
 
+function fillRecipeChoiceSelect(sel, list, selected, { numeric = false } = {}) {
+  if (!(sel instanceof HTMLSelectElement)) return;
+  const opts = numeric
+    ? recipeBakeTempOptions().map((t) => ({ id: t, label: t }))
+    : list;
+  sel.innerHTML = `<option value=""></option>${opts
+    .map(
+      (o) =>
+        `<option value="${escapeHtml(o.id)}"${String(o.id) === String(selected ?? "") ? " selected" : ""}>${escapeHtml(o.label)}</option>`,
+    )
+    .join("")}`;
+}
+
+function recipeEditorSelectOptions(list, selected) {
+  return `<option value=""></option>${list
+    .map(
+      (o) =>
+        `<option value="${escapeHtml(o.id)}"${o.id === selected ? " selected" : ""}>${escapeHtml(o.label)}</option>`,
+    )
+    .join("")}`;
+}
+
+function collectRecipeEditor() {
+  const mixGroups = [...document.querySelectorAll("#lunchRecipeMixList [data-mix-i]")].map((el) => ({
+    items: el.querySelector("[data-f='items']")?.value ?? "",
+    tool: el.querySelector("[data-f='tool']")?.value ?? "",
+    toolCustom: el.querySelector("[data-f='toolCustom']")?.value ?? "",
+  }));
+  const bowls = [...document.querySelectorAll("#lunchRecipeBowlList [data-bowl-i]")].map((el) => ({
+    label: el.querySelector("[data-f='label']")?.value ?? "",
+    kind: el.querySelector("[data-f='kind']")?.value ?? "",
+    kindCustom: el.querySelector("[data-f='kindCustom']")?.value ?? "",
+    items: el.querySelector("[data-f='items']")?.value ?? "",
+  }));
+  const steps = [...document.querySelectorAll("#lunchRecipeStepsList [data-step-i]")]
+    .map((el) => el.querySelector("[data-f='text']")?.value ?? "")
+    .map((s) => String(s).trim())
+    .filter(Boolean);
+  return { mixGroups, bowls, steps };
+}
+
+function renderRecipeEditorLists({ mixGroups, bowls, steps }) {
+  const mixRoot = document.getElementById("lunchRecipeMixList");
+  const bowlRoot = document.getElementById("lunchRecipeBowlList");
+  const stepRoot = document.getElementById("lunchRecipeStepsList");
+  if (mixRoot) {
+    mixRoot.innerHTML = (mixGroups.length ? mixGroups : [emptyMixGroup()])
+      .map(
+        (g, i) => `<div class="recipe-editor-block" data-mix-i="${i}">
+        <textarea class="textarea" data-f="items" rows="3">${escapeHtml(g.items ?? "")}</textarea>
+        <div class="recipe-dd-row">
+          <select class="select" data-f="tool">${recipeEditorSelectOptions(RECIPE_MIX_TOOLS, g.tool)}</select>
+          <input class="input" data-f="toolCustom" type="text" maxlength="80" value="${escapeHtml(g.toolCustom ?? "")}" />
+        </div>
+        <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="recipe-editor-remove-mix">מחיקה</button>
+      </div>`,
+      )
+      .join("");
+  }
+  if (bowlRoot) {
+    bowlRoot.innerHTML = (bowls.length ? bowls : [emptyBowl(1), emptyBowl(2)])
+      .map(
+        (b, i) => `<div class="recipe-editor-block" data-bowl-i="${i}">
+        <input class="input" data-f="label" type="text" maxlength="40" value="${escapeHtml(b.label ?? `קערה ${i + 1}`)}" />
+        <div class="recipe-dd-row">
+          <select class="select" data-f="kind">${recipeEditorSelectOptions(RECIPE_BOWL_KINDS, b.kind)}</select>
+          <input class="input" data-f="kindCustom" type="text" maxlength="80" value="${escapeHtml(b.kindCustom ?? "")}" />
+        </div>
+        <textarea class="textarea" data-f="items" rows="3">${escapeHtml(b.items ?? "")}</textarea>
+        <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="recipe-editor-remove-bowl">מחיקה</button>
+      </div>`,
+      )
+      .join("");
+  }
+  if (stepRoot) {
+    const list = steps.length ? steps : [""];
+    stepRoot.innerHTML = list
+      .map(
+        (text, i) => `<div class="recipe-editor-step" data-step-i="${i}">
+        <span class="recipe-editor-n">${i + 1}.</span>
+        <textarea class="textarea" data-f="text" rows="2">${escapeHtml(text)}</textarea>
+        <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="recipe-editor-remove-step">מחיקה</button>
+      </div>`,
+      )
+      .join("");
+  }
+}
+
 function openRecipeEditor({ recipeId = "", dishId = "", title = "" } = {}) {
   const dlg = document.getElementById("lunchRecipeDialog");
   if (!(dlg instanceof HTMLDialogElement)) return;
@@ -2037,15 +2162,23 @@ function openRecipeEditor({ recipeId = "", dishId = "", title = "" } = {}) {
   const titleEl = document.getElementById("lunchRecipeDialogTitle");
   if (titleEl) titleEl.textContent = rec ? "עריכת מתכון" : "מתכון חדש";
   const dish = linkedDishId ? findDish(lunchPlanner, linkedDishId) : null;
-  document.getElementById("lunchRecipeDishLine").textContent = rec
-    ? "אפשר לערוך מצרכים, אופן הכנה והערות."
-    : dish
-      ? `מתכון חדש למנה: ${dish.name}`
-      : "מלאי שם, מצרכים ואופן הכנה. קישור למנה הוא אופציונלי.";
+  const dishLine = document.getElementById("lunchRecipeDishLine");
+  if (dishLine) dishLine.textContent = dish ? dish.name : "";
   document.getElementById("lunchRecipeTitle").value = rec?.title || title || dish?.name || "";
-  document.getElementById("lunchRecipeIngredients").value = rec?.ingredients ?? "";
-  document.getElementById("lunchRecipeSteps").value = rec?.steps ?? rec?.body ?? "";
+  document.getElementById("lunchRecipeSubtitle").value = rec?.subtitle ?? "";
+  fillRecipeChoiceSelect(document.getElementById("lunchRecipePanShape"), RECIPE_PAN_SHAPES, rec?.panShape);
+  document.getElementById("lunchRecipePanShapeCustom").value = rec?.panShapeCustom ?? "";
+  document.getElementById("lunchRecipePanSize").value = rec?.panSize ?? "";
+  fillRecipeChoiceSelect(document.getElementById("lunchRecipeBakeTemp"), [], rec?.bakeTemp, { numeric: true });
+  document.getElementById("lunchRecipeBakeTempCustom").value = rec?.bakeTempCustom ?? "";
+  fillRecipeChoiceSelect(document.getElementById("lunchRecipeBakeMode"), RECIPE_BAKE_MODES, rec?.bakeMode);
+  document.getElementById("lunchRecipeBakeModeCustom").value = rec?.bakeModeCustom ?? "";
+  document.getElementById("lunchRecipeExtras").value = rec?.extras ?? "";
   document.getElementById("lunchRecipeNotes").value = rec?.notes ?? "";
+  const mixGroups = rec?.mixGroups?.length ? rec.mixGroups : [emptyMixGroup()];
+  const bowls = rec?.bowls?.length ? rec.bowls : [emptyBowl(1), emptyBowl(2)];
+  const steps = rec ? kitchenRecipeLines(rec.steps).map((row) => row.text) : [""];
+  renderRecipeEditorLists({ mixGroups, bowls, steps });
   document.getElementById("lunchRecipeDelete")?.classList.toggle("hidden", !rec);
   dlg.showModal();
   queueMicrotask(() => document.getElementById("lunchRecipeTitle")?.focus());
@@ -2652,10 +2785,20 @@ function renderRecipesPage() {
       const dish = r.dishId ? findDish(lunchPlanner, r.dishId) : null;
       const dishLine = dish ? `<div class="recipe-card-dish">מנה: ${escapeHtml(dishLabelForSelect(dish))}</div>` : "";
       const open = recipesOpenIds.has(r.id);
+      const bake = recipeBakeHeadline(r);
+      const ings = recipeIngredientSections(r)
+        .map((sec) => recipeBlockHtml(sec.heading, sec.lines.map((row) => row.text).join("\n")))
+        .join("");
+      const stepLines = kitchenRecipeLines(r.steps);
       const body =
-        recipeBlockHtml("מצרכים", r.ingredients) +
-        recipeBlockHtml("אופן הכנה", r.steps) +
-        (!r.ingredients && !r.steps ? `<div class="recipe-block-empty">עדיין בלי מצרכים או אופן הכנה — לחצי עריכה.</div>` : "");
+        (bake ? recipeBlockHtml("אפייה", bake) : "") +
+        ings +
+        (stepLines.length
+          ? recipeBlockHtml(
+              "אופן הכנה",
+              stepLines.map((row, n) => `${n + 1}. ${row.text}`).join("\n"),
+            )
+          : "");
       return `<details class="recipe-card" data-recipe-id="${escapeHtml(r.id)}" ${open ? "open" : ""} role="listitem">
         <summary class="recipe-card-summary">
           <span class="recipe-card-title">${escapeHtml(r.title)}</span>
@@ -5207,6 +5350,44 @@ function wireGlobalHandlers() {
   document.getElementById("recipesAddBtn")?.addEventListener("click", () => {
     openRecipeEditor({});
   });
+  document.getElementById("lunchRecipeAddMix")?.addEventListener("click", () => {
+    const cur = collectRecipeEditor();
+    cur.mixGroups.push(emptyMixGroup());
+    renderRecipeEditorLists(cur);
+  });
+  document.getElementById("lunchRecipeAddBowl")?.addEventListener("click", () => {
+    const cur = collectRecipeEditor();
+    cur.bowls.push(emptyBowl(cur.bowls.length + 1));
+    renderRecipeEditorLists(cur);
+  });
+  document.getElementById("lunchRecipeAddStep")?.addEventListener("click", () => {
+    const cur = collectRecipeEditor();
+    cur.steps.push("");
+    renderRecipeEditorLists(cur);
+  });
+  document.getElementById("lunchRecipeForm")?.addEventListener("click", (e) => {
+    const mixRm = e.target.closest("[data-action='recipe-editor-remove-mix']");
+    const bowlRm = e.target.closest("[data-action='recipe-editor-remove-bowl']");
+    const stepRm = e.target.closest("[data-action='recipe-editor-remove-step']");
+    if (!mixRm && !bowlRm && !stepRm) return;
+    const cur = collectRecipeEditor();
+    if (mixRm) {
+      const i = Number(mixRm.closest("[data-mix-i]")?.getAttribute("data-mix-i"));
+      if (Number.isInteger(i)) cur.mixGroups.splice(i, 1);
+      if (!cur.mixGroups.length) cur.mixGroups.push(emptyMixGroup());
+    }
+    if (bowlRm) {
+      const i = Number(bowlRm.closest("[data-bowl-i]")?.getAttribute("data-bowl-i"));
+      if (Number.isInteger(i)) cur.bowls.splice(i, 1);
+      if (!cur.bowls.length) cur.bowls.push(emptyBowl(1));
+    }
+    if (stepRm) {
+      const i = Number(stepRm.closest("[data-step-i]")?.getAttribute("data-step-i"));
+      if (Number.isInteger(i)) cur.steps.splice(i, 1);
+      if (!cur.steps.length) cur.steps.push("");
+    }
+    renderRecipeEditorLists(cur);
+  });
   document.getElementById("recipesSearch")?.addEventListener("input", (e) => {
     recipesSearchQuery = String(e.target?.value ?? "");
     renderRecipesPage();
@@ -5282,7 +5463,8 @@ function wireGlobalHandlers() {
       const i = Number(delLine.getAttribute("data-i"));
       if (!confirm("למחוק את הסעיף?")) return;
       removeRecipeLine(lunchPlanner, kitchenRecipeId, kind, i);
-      remapKitchenDoneAfterDelete(kind === "ing" ? kitchenIngDone : kitchenStepDone, i);
+      if (kind === "step") remapKitchenDoneAfterDelete(kitchenStepDone, null, i);
+      else remapKitchenDoneAfterDelete(kitchenIngDone, kind, i);
       persistLunchPlanner();
       kitchenEditing = null;
       renderRecipeKitchen();
@@ -5323,8 +5505,10 @@ function wireGlobalHandlers() {
   document.getElementById("viewRecipeKitchen")?.addEventListener("change", (e) => {
     const inp = e.target.closest("[data-action='recipe-kitchen-check']");
     if (!inp) return;
-    const set = inp.getAttribute("data-k") === "ing" ? kitchenIngDone : kitchenStepDone;
-    const key = String(inp.getAttribute("data-i") ?? "");
+    const kind = inp.getAttribute("data-k");
+    const i = String(inp.getAttribute("data-i") ?? "");
+    const set = kind === "step" ? kitchenStepDone : kitchenIngDone;
+    const key = kind === "step" ? i : `${kind}::${i}`;
     if (inp.checked) set.add(key);
     else set.delete(key);
     inp.closest(".recipe-kitchen-line")?.classList.toggle("is-done", inp.checked);
@@ -5357,12 +5541,23 @@ function wireGlobalHandlers() {
       return;
     }
     const picked = document.getElementById("lunchRecipeDishSel")?.value || "";
+    const lists = collectRecipeEditor();
     const saved = upsertRecipe(lunchPlanner, {
       id: dlg.dataset.recipeId || uid("lrec"),
       dishId: picked,
       title,
-      ingredients: document.getElementById("lunchRecipeIngredients")?.value ?? "",
-      steps: document.getElementById("lunchRecipeSteps")?.value ?? "",
+      subtitle: document.getElementById("lunchRecipeSubtitle")?.value ?? "",
+      panShape: document.getElementById("lunchRecipePanShape")?.value ?? "",
+      panShapeCustom: document.getElementById("lunchRecipePanShapeCustom")?.value ?? "",
+      panSize: document.getElementById("lunchRecipePanSize")?.value ?? "",
+      bakeTemp: document.getElementById("lunchRecipeBakeTemp")?.value ?? "",
+      bakeTempCustom: document.getElementById("lunchRecipeBakeTempCustom")?.value ?? "",
+      bakeMode: document.getElementById("lunchRecipeBakeMode")?.value ?? "",
+      bakeModeCustom: document.getElementById("lunchRecipeBakeModeCustom")?.value ?? "",
+      mixGroups: lists.mixGroups,
+      bowls: lists.bowls,
+      extras: document.getElementById("lunchRecipeExtras")?.value ?? "",
+      steps: lists.steps.join("\n"),
       notes: document.getElementById("lunchRecipeNotes")?.value ?? "",
     });
     persistLunchPlanner();

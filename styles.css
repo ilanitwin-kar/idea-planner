@@ -1190,7 +1190,9 @@ body.app-mode-home .top-menu-dialog{
 }
 
 .dialog--wide .dialog-inner{
-  max-width: min(560px, 100vw - 24px);
+  max-width: min(640px, 100vw - 24px);
+  max-height: min(90vh, 920px);
+  overflow: auto;
 }
 .pantry-import-toolbar{
   display: flex;
@@ -3227,6 +3229,63 @@ body.app-mode-home .top-menu-dialog{
   gap: 6px;
   margin: 8px 0;
 }
+.recipe-editor-bake{
+  display: grid;
+  gap: 12px;
+  margin: 10px 0 14px;
+}
+.recipe-editor-field{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.recipe-editor-label{
+  font-weight: 800;
+  font-size: 0.92rem;
+  color: var(--heading);
+  margin: 10px 0 6px;
+}
+.recipe-editor-list{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.recipe-editor-block,
+.recipe-editor-step{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: #fff;
+}
+.recipe-editor-step{
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.recipe-editor-n{
+  font-weight: 800;
+  font-size: 1.1rem;
+  min-width: 1.6rem;
+  padding-top: 8px;
+}
+.recipe-editor-step .textarea{
+  flex: 1;
+  min-width: 140px;
+}
+.recipe-dd-row{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.recipe-dd-row .select,
+.recipe-dd-row .input{
+  flex: 1;
+  min-width: 120px;
+}
 .recipes-toolbar{
   display: flex;
   flex-wrap: wrap;
@@ -3374,11 +3433,27 @@ body.recipe-kitchen-open .bottom-nav{
   padding: 4px 0 8px;
   color: var(--heading);
 }
+.recipe-kitchen-meta{
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--heading);
+  margin: 0 0 16px;
+}
 .recipe-kitchen-h{
   font-size: 1.28rem;
   font-weight: 800;
   margin: 18px 0 6px;
   color: var(--heading);
+}
+.recipe-kitchen-n{
+  font-weight: 800;
+  min-width: 1.6rem;
+}
+.recipe-kitchen-tips{
+  font-size: 1.2rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  margin-bottom: 16px;
 }
 .recipe-kitchen-ings{
   margin-bottom: 8px;

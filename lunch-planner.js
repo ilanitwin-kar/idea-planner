@@ -11,6 +11,152 @@ export const LUNCH_STOCK_LABELS = {
   extras: "נוספים בבית",
 };
 
+export const RECIPE_PAN_SHAPES = [
+  { id: "round", label: "עגול" },
+  { id: "square", label: "מרובע" },
+  { id: "rect", label: "מלבן" },
+];
+
+export const RECIPE_BAKE_MODES = [
+  { id: "turbo", label: "טורבו" },
+  { id: "topbottom", label: "חום עליון תחתון" },
+  { id: "grill", label: "גריל" },
+];
+
+export const RECIPE_MIX_TOOLS = [
+  { id: "mixer", label: "מיקסר" },
+  { id: "processor", label: "מעבד מזון" },
+  { id: "whisk", label: "מטרפה ידנית" },
+];
+
+export const RECIPE_BOWL_KINDS = [
+  { id: "wet", label: "רטובים" },
+  { id: "dry", label: "יבשים" },
+];
+
+export function recipeBakeTempOptions() {
+  const out = [];
+  for (let t = 50; t <= 300; t += 5) out.push(String(t));
+  return out;
+}
+
+export function pickRecipeChoice(id, custom, list) {
+  const c = String(custom ?? "").trim();
+  if (c) return c;
+  return list.find((x) => x.id === id)?.label ?? "";
+}
+
+export function emptyMixGroup() {
+  return { items: "", tool: "", toolCustom: "" };
+}
+
+export function emptyBowl(n) {
+  return { label: `קערה ${n}`, kind: n === 1 ? "wet" : n === 2 ? "dry" : "", kindCustom: "", items: "" };
+}
+
+function sanitizeMixGroup(g) {
+  if (!g || typeof g !== "object") return emptyMixGroup();
+  const tool = RECIPE_MIX_TOOLS.some((x) => x.id === g.tool) ? g.tool : "";
+  return {
+    items: String(g.items ?? "").trim(),
+    tool,
+    toolCustom: String(g.toolCustom ?? "").trim().slice(0, 80),
+  };
+}
+
+function sanitizeBowl(g, n) {
+  const base = emptyBowl(n);
+  if (!g || typeof g !== "object") return base;
+  const kind = RECIPE_BOWL_KINDS.some((x) => x.id === g.kind) ? g.kind : "";
+  const label = String(g.label ?? "").trim().slice(0, 40);
+  return {
+    label: label || base.label,
+    kind,
+    kindCustom: String(g.kindCustom ?? "").trim().slice(0, 80),
+    items: String(g.items ?? "").trim(),
+  };
+}
+
+function sanitizeBakeTemp(raw, custom) {
+  const c = String(custom ?? "").trim().slice(0, 12);
+  const t = String(raw ?? "").trim();
+  const n = Number(t);
+  const ok = Number.isFinite(n) && n >= 50 && n <= 300;
+  return {
+    bakeTemp: ok ? String(Math.round(n)) : "",
+    bakeTempCustom: c,
+  };
+}
+
+export function flattenRecipeIngredients(rec) {
+  const parts = [];
+  for (const g of rec.mixGroups ?? []) {
+    const h = pickRecipeChoice(g.tool, g.toolCustom, RECIPE_MIX_TOOLS);
+    if (h) parts.push(h);
+    if (g.items) parts.push(g.items);
+  }
+  for (const b of rec.bowls ?? []) {
+    const kind = pickRecipeChoice(b.kind, b.kindCustom, RECIPE_BOWL_KINDS);
+    const head = [b.label, kind].filter(Boolean).join(" · ");
+    if (head) parts.push(head);
+    if (b.items) parts.push(b.items);
+  }
+  if (rec.extras) {
+    parts.push("תוספות", rec.extras);
+  }
+  return parts.join("\n").trim();
+}
+
+export function recipeBakeHeadline(rec) {
+  if (!rec) return "";
+  const bits = [];
+  const shape = pickRecipeChoice(rec.panShape, rec.panShapeCustom, RECIPE_PAN_SHAPES);
+  const size = String(rec.panSize ?? "").trim();
+  if (shape || size) bits.push([shape, size].filter(Boolean).join(" "));
+  const temp = String(rec.bakeTempCustom || rec.bakeTemp || "").trim();
+  if (temp) bits.push(`${temp}°`);
+  const mode = pickRecipeChoice(rec.bakeMode, rec.bakeModeCustom, RECIPE_BAKE_MODES);
+  if (mode) bits.push(mode);
+  return bits.join(" · ");
+}
+
+export function recipeIngredientSections(rec) {
+  const sections = [];
+  const groups = rec.mixGroups ?? [];
+  const bowls = rec.bowls ?? [];
+  const hasStruct =
+    groups.some((g) => g.items || g.tool || g.toolCustom) ||
+    bowls.some((b) => b.items || b.kind || b.kindCustom) ||
+    String(rec.extras ?? "").trim();
+  if (hasStruct) {
+    groups.forEach((g, i) => {
+      const lines = kitchenRecipeLines(g.items);
+      if (!lines.length) return;
+      sections.push({
+        key: `mix:${i}`,
+        heading: pickRecipeChoice(g.tool, g.toolCustom, RECIPE_MIX_TOOLS) || "מצרכים",
+        lines,
+      });
+    });
+    bowls.forEach((b, i) => {
+      const lines = kitchenRecipeLines(b.items);
+      if (!lines.length) return;
+      const kind = pickRecipeChoice(b.kind, b.kindCustom, RECIPE_BOWL_KINDS);
+      sections.push({
+        key: `bowl:${i}`,
+        heading: [b.label || `קערה ${i + 1}`, kind].filter(Boolean).join(" · "),
+        lines,
+      });
+    });
+    const extras = kitchenRecipeLines(rec.extras);
+    if (extras.length) sections.push({ key: "extras", heading: "תוספות", lines: extras });
+    return sections;
+  }
+  const legacy = kitchenRecipeLines(rec.ingredients);
+  if (legacy.length) sections.push({ key: "ing", heading: "מצרכים", lines: legacy });
+  return sections;
+}
+
 function emptyStock() {
   return { carbs: [], proteins: [], vegetables: [], extras: [] };
 }
@@ -169,18 +315,40 @@ function sanitizeRecipe(r) {
     ? [...new Set(r.importantSteps.map(Number).filter((n) => Number.isInteger(n) && n >= 0))]
     : [];
   const bakeResult = r.bakeResult === "ok" || r.bakeResult === "no" ? r.bakeResult : "";
-  return {
+  const panShape = RECIPE_PAN_SHAPES.some((x) => x.id === r.panShape) ? r.panShape : "";
+  const bakeMode = RECIPE_BAKE_MODES.some((x) => x.id === r.bakeMode) ? r.bakeMode : "";
+  const temps = sanitizeBakeTemp(r.bakeTemp, r.bakeTempCustom);
+  let mixGroups = Array.isArray(r.mixGroups) ? r.mixGroups.map(sanitizeMixGroup) : [];
+  let bowls = Array.isArray(r.bowls) ? r.bowls.map((b, i) => sanitizeBowl(b, i + 1)) : [];
+  if (!mixGroups.length && String(r.ingredients ?? "").trim()) {
+    mixGroups = [sanitizeMixGroup({ items: r.ingredients })];
+  }
+  if (!bowls.length) bowls = [emptyBowl(1), emptyBowl(2)];
+  const extras = String(r.extras ?? "").trim();
+  const rec = {
     id: String(r.id),
     title,
     subtitle: String(r.subtitle ?? "").trim().slice(0, 120),
     dishId: r.dishId ? String(r.dishId) : "",
-    ingredients: String(r.ingredients ?? "").trim(),
+    panShape,
+    panShapeCustom: String(r.panShapeCustom ?? "").trim().slice(0, 80),
+    panSize: String(r.panSize ?? "").trim().slice(0, 40),
+    bakeTemp: temps.bakeTemp,
+    bakeTempCustom: temps.bakeTempCustom,
+    bakeMode,
+    bakeModeCustom: String(r.bakeModeCustom ?? "").trim().slice(0, 80),
+    mixGroups,
+    bowls,
+    extras,
+    ingredients: "",
     steps,
     notes: String(r.notes ?? ""),
     importantSteps,
     bakeResult,
     bakeNote: String(r.bakeNote ?? "").slice(0, 2000),
   };
+  rec.ingredients = flattenRecipeIngredients(rec) || String(r.ingredients ?? "").trim();
+  return rec;
 }
 
 export function parseRecipeLines(text) {
@@ -216,11 +384,37 @@ function remapIndexList(list, removedIndex) {
     .map((n) => (n > removedIndex ? n - 1 : n));
 }
 
+function sectionAccessor(rec, field) {
+  if (field === "step" || field === "steps") {
+    return { get: () => rec.steps, set: (v) => { rec.steps = v; }, step: true };
+  }
+  if (field === "ing" || field === "ingredients") {
+    return { get: () => rec.ingredients, set: (v) => { rec.ingredients = v; } };
+  }
+  if (field === "extras") {
+    return { get: () => rec.extras, set: (v) => { rec.extras = v; } };
+  }
+  const mix = /^mix:(\d+)$/.exec(String(field ?? ""));
+  if (mix) {
+    const i = Number(mix[1]);
+    if (!rec.mixGroups?.[i]) return null;
+    return { get: () => rec.mixGroups[i].items, set: (v) => { rec.mixGroups[i].items = v; } };
+  }
+  const bowl = /^bowl:(\d+)$/.exec(String(field ?? ""));
+  if (bowl) {
+    const i = Number(bowl[1]);
+    if (!rec.bowls?.[i]) return null;
+    return { get: () => rec.bowls[i].items, set: (v) => { rec.bowls[i].items = v; } };
+  }
+  return null;
+}
+
 export function replaceRecipeLine(state, recipeId, field, index, text) {
   const rec = findRecipe(state, recipeId);
   if (!rec) return false;
-  const key = field === "ing" ? "ingredients" : "steps";
-  const lines = parseRecipeLines(rec[key]);
+  const acc = sectionAccessor(rec, field);
+  if (!acc) return false;
+  const lines = parseRecipeLines(acc.get());
   const i = Number(index);
   if (!Number.isInteger(i) || i < 0 || i >= lines.length) return false;
   const next = String(text ?? "").replace(/\s+/g, " ").trim();
@@ -228,20 +422,23 @@ export function replaceRecipeLine(state, recipeId, field, index, text) {
     return removeRecipeLine(state, recipeId, field, i);
   }
   lines[i] = next;
-  rec[key] = joinRecipeLines(lines);
+  acc.set(joinRecipeLines(lines));
+  rec.ingredients = flattenRecipeIngredients(rec);
   return true;
 }
 
 export function removeRecipeLine(state, recipeId, field, index) {
   const rec = findRecipe(state, recipeId);
   if (!rec) return false;
-  const key = field === "ing" ? "ingredients" : "steps";
-  const lines = parseRecipeLines(rec[key]);
+  const acc = sectionAccessor(rec, field);
+  if (!acc) return false;
+  const lines = parseRecipeLines(acc.get());
   const i = Number(index);
   if (!Number.isInteger(i) || i < 0 || i >= lines.length) return false;
   lines.splice(i, 1);
-  rec[key] = joinRecipeLines(lines);
-  if (key === "steps") rec.importantSteps = remapIndexList(rec.importantSteps, i);
+  acc.set(joinRecipeLines(lines));
+  if (acc.step) rec.importantSteps = remapIndexList(rec.importantSteps, i);
+  rec.ingredients = flattenRecipeIngredients(rec);
   return true;
 }
 
@@ -532,7 +729,16 @@ export function recipeMatchesQuery(recipe, query, dishName = "") {
   const q = String(query ?? "").trim().toLowerCase();
   if (!q) return true;
   const tokens = q.split(/\s+/).filter(Boolean);
-  const hay = [recipe.title, recipe.ingredients, recipe.steps, recipe.notes, dishName]
+  const hay = [
+    recipe.title,
+    recipe.subtitle,
+    recipeBakeHeadline(recipe),
+    recipe.ingredients,
+    recipe.extras,
+    recipe.steps,
+    recipe.notes,
+    dishName,
+  ]
     .join("\n")
     .toLowerCase();
   return tokens.every((t) => hay.includes(t));
@@ -540,43 +746,44 @@ export function recipeMatchesQuery(recipe, query, dishName = "") {
 
 export function recipePlainText(recipe, dishName = "") {
   const lines = [recipe.title || "מתכון"];
+  if (recipe.subtitle) lines.push(recipe.subtitle);
   if (dishName) lines.push(`מנה: ${dishName}`);
+  const bake = recipeBakeHeadline(recipe);
+  if (bake) lines.push(bake);
   lines.push("");
-  if (recipe.ingredients) {
-    lines.push("מצרכים:", recipe.ingredients, "");
+  for (const sec of recipeIngredientSections(recipe)) {
+    lines.push(sec.heading + ":");
+    for (const row of sec.lines) lines.push(`- ${row.text}`);
+    lines.push("");
   }
   if (recipe.steps) {
-    lines.push("אופן הכנה:", recipe.steps, "");
+    lines.push("אופן הכנה:");
+    kitchenRecipeLines(recipe.steps).forEach((row, n) => {
+      lines.push(`${n + 1}. ${row.text}`);
+    });
+    lines.push("");
   }
   if (String(recipe.notes ?? "").trim()) {
-    lines.push("הערות אישיות:", String(recipe.notes).trim());
+    lines.push("טיפים:", String(recipe.notes).trim());
   }
   return lines.join("\n").trim();
 }
 
-export function upsertRecipe(state, { id, dishId, title, ingredients, steps, notes }) {
-  const t = String(title ?? "").trim();
+export function upsertRecipe(state, patchIn) {
+  const t = String(patchIn.title ?? "").trim();
   if (!t) return null;
   if (!Array.isArray(state.recipes)) state.recipes = [];
-  const patch = { title: t };
-  if (dishId !== undefined) patch.dishId = dishId ? String(dishId) : "";
-  if (ingredients !== undefined) patch.ingredients = String(ingredients).trim();
-  if (steps !== undefined) patch.steps = String(steps).trim();
-  if (notes !== undefined) patch.notes = String(notes);
-
-  let rec = id ? state.recipes.find((r) => r.id === id) : null;
+  const patch = { ...patchIn, title: t };
+  let rec = patchIn.id ? state.recipes.find((r) => r.id === patchIn.id) : null;
   if (!rec && patch.dishId) rec = state.recipes.find((r) => r.dishId === patch.dishId);
   if (rec) {
-    Object.assign(rec, patch);
+    Object.assign(rec, sanitizeRecipe({ ...rec, ...patch, id: rec.id }));
   } else {
     rec = sanitizeRecipe({
-      id: id || `lrec_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`,
-      dishId: patch.dishId ?? "",
-      ingredients: patch.ingredients ?? "",
-      steps: patch.steps ?? "",
-      notes: patch.notes ?? "",
-      title: t,
+      ...patch,
+      id: patchIn.id || `lrec_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`,
     });
+    if (!rec) return null;
     state.recipes.push(rec);
   }
   state.recipes.sort((a, b) => a.title.localeCompare(b.title, "he"));

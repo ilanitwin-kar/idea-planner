@@ -652,15 +652,44 @@
             <option value="">בלי קישור למנה</option>
           </select>
         </label>
-        <input id="lunchRecipeTitle" class="input" type="text" maxlength="120" placeholder="שם המתכון…" />
-        <label class="checkline">מצרכים
-          <textarea id="lunchRecipeIngredients" class="textarea" rows="6" placeholder="שורה לכל מצרך…"></textarea>
+        <label class="checkline">שם המתכון
+          <input id="lunchRecipeTitle" class="input" type="text" maxlength="120" />
         </label>
-        <label class="checkline">אופן הכנה
-          <textarea id="lunchRecipeSteps" class="textarea" rows="8" placeholder="שלבים…"></textarea>
+        <label class="checkline">כותרת שנייה
+          <input id="lunchRecipeSubtitle" class="input" type="text" maxlength="120" />
         </label>
-        <label class="checkline">הערות אישיות
-          <textarea id="lunchRecipeNotes" class="textarea" rows="3" placeholder="מה שינית, מה אהבת, טיפים…"></textarea>
+        <div class="recipe-editor-bake">
+          <div class="recipe-editor-field">
+            <div class="recipe-editor-label">תבנית</div>
+            <select id="lunchRecipePanShape" class="select"></select>
+            <input id="lunchRecipePanShapeCustom" class="input" type="text" maxlength="80" aria-label="תבנית — התאמה אישית" />
+            <div class="recipe-editor-label">גודל או קוטר</div>
+            <input id="lunchRecipePanSize" class="input" type="text" maxlength="40" aria-label="גודל או קוטר" />
+          </div>
+          <div class="recipe-editor-field">
+            <div class="recipe-editor-label">חום אפייה</div>
+            <select id="lunchRecipeBakeTemp" class="select"></select>
+            <input id="lunchRecipeBakeTempCustom" class="input" type="text" maxlength="12" inputmode="numeric" aria-label="חום — התאמה אישית" />
+          </div>
+          <div class="recipe-editor-field">
+            <div class="recipe-editor-label">סוג אפייה</div>
+            <select id="lunchRecipeBakeMode" class="select"></select>
+            <input id="lunchRecipeBakeModeCustom" class="input" type="text" maxlength="80" aria-label="סוג אפייה — התאמה אישית" />
+          </div>
+        </div>
+        <div class="recipe-editor-label">מצרכים</div>
+        <div id="lunchRecipeMixList" class="recipe-editor-list"></div>
+        <button type="button" class="btn btn-ghost" id="lunchRecipeAddMix">+ ערבוב</button>
+        <div id="lunchRecipeBowlList" class="recipe-editor-list"></div>
+        <button type="button" class="btn btn-ghost" id="lunchRecipeAddBowl">+ קערה</button>
+        <label class="checkline">תוספות
+          <textarea id="lunchRecipeExtras" class="textarea" rows="4"></textarea>
+        </label>
+        <div class="recipe-editor-label">אופן הכנה</div>
+        <div id="lunchRecipeStepsList" class="recipe-editor-list"></div>
+        <button type="button" class="btn btn-ghost" id="lunchRecipeAddStep">+ שלב</button>
+        <label class="checkline">טיפים
+          <textarea id="lunchRecipeNotes" class="textarea" rows="3"></textarea>
         </label>
         <div class="dialog-actions">
           <button id="lunchRecipeSave" class="btn" type="button">שמירה במאגר מתכונים</button>
@@ -784,10 +813,14 @@
         <button type="button" class="btn btn-ghost" data-action="recipe-kitchen-edit-title">עריכה</button>
       </div>
       <input id="recipeKitchenSubtitle" class="recipe-kitchen-subtitle" type="text" maxlength="120" />
-      <h2 class="recipe-kitchen-h">מצרכים</h2>
+      <div id="recipeKitchenMeta" class="recipe-kitchen-meta"></div>
       <div id="recipeKitchenIngs" class="recipe-kitchen-ings"></div>
       <h2 class="recipe-kitchen-h">אופן הכנה</h2>
       <div id="recipeKitchenSteps" class="recipe-kitchen-steps"></div>
+      <div id="recipeKitchenTipsWrap" class="recipe-kitchen-tips-wrap hidden">
+        <h2 class="recipe-kitchen-h">טיפים</h2>
+        <div id="recipeKitchenTips" class="recipe-kitchen-tips"></div>
+      </div>
       <div class="recipe-kitchen-log">
         <div class="recipe-kitchen-result" role="group" aria-label="תוצאה">
           <button type="button" class="btn btn-ghost" data-action="recipe-bake-result" data-result="ok">הצליח</button>
