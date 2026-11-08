@@ -152,6 +152,8 @@ import {
   RECIPE_BOWL_KINDS,
   emptyMixGroup,
   emptyBowl,
+  editorListsFromRecipe,
+  migrateAllRecipes,
   deleteRecipe,
   recipeMatchesQuery,
   recipePlainText,
@@ -644,6 +646,7 @@ async function runEnableHourlyPushFromClick() {
 }
 
 let lunchPlanner = loadLunchPlanner();
+if (migrateAllRecipes(lunchPlanner)) saveLunchPlanner(lunchPlanner);
 let lunchBrowseWeekStart = weekStartKeyFromDateKey(localDateKey());
 
 const LUNCH_PLANNER_TAB_KEY = "idea-planner:lunch-tab:v1";
@@ -2175,10 +2178,7 @@ function openRecipeEditor({ recipeId = "", dishId = "", title = "" } = {}) {
   document.getElementById("lunchRecipeBakeModeCustom").value = rec?.bakeModeCustom ?? "";
   document.getElementById("lunchRecipeExtras").value = rec?.extras ?? "";
   document.getElementById("lunchRecipeNotes").value = rec?.notes ?? "";
-  const mixGroups = rec?.mixGroups?.length ? rec.mixGroups : [emptyMixGroup()];
-  const bowls = rec?.bowls?.length ? rec.bowls : [emptyBowl(1), emptyBowl(2)];
-  const steps = rec ? kitchenRecipeLines(rec.steps).map((row) => row.text) : [""];
-  renderRecipeEditorLists({ mixGroups, bowls, steps });
+  renderRecipeEditorLists(editorListsFromRecipe(rec));
   document.getElementById("lunchRecipeDelete")?.classList.toggle("hidden", !rec);
   dlg.showModal();
   queueMicrotask(() => document.getElementById("lunchRecipeTitle")?.focus());
@@ -2799,24 +2799,29 @@ function renderRecipesPage() {
               stepLines.map((row, n) => `${n + 1}. ${row.text}`).join("\n"),
             )
           : "");
-      return `<details class="recipe-card" data-recipe-id="${escapeHtml(r.id)}" ${open ? "open" : ""} role="listitem">
-        <summary class="recipe-card-summary">
-          <span class="recipe-card-title">${escapeHtml(r.title)}</span>
-          ${dishLine}
-        </summary>
-        <div class="recipe-card-body">
-          ${body}
-          <label class="checkline recipe-notes-label">הערות אישיות
-            <textarea class="textarea recipe-notes-input" rows="3" maxlength="800" data-recipe-notes="${escapeHtml(r.id)}" placeholder="מה שינית, מה אהבת, טיפים…">${escapeHtml(r.notes ?? "")}</textarea>
-          </label>
+      return `<article class="recipe-card" data-recipe-id="${escapeHtml(r.id)}" role="listitem">
+        <div class="recipe-card-head">
+          <div>
+            <div class="recipe-card-title">${escapeHtml(r.title)}</div>
+            ${dishLine}
+          </div>
           <div class="recipe-card-actions">
-            <button type="button" class="btn" data-action="recipe-kitchen" data-recipe-id="${escapeHtml(r.id)}">למטבח</button>
-            <button type="button" class="btn" data-action="recipe-copy" data-recipe-id="${escapeHtml(r.id)}">העתקה</button>
             <button type="button" class="btn btn-ghost" data-action="recipe-edit" data-recipe-id="${escapeHtml(r.id)}">עריכה</button>
+            <button type="button" class="btn" data-action="recipe-kitchen" data-recipe-id="${escapeHtml(r.id)}">למטבח</button>
+            <button type="button" class="btn btn-ghost" data-action="recipe-copy" data-recipe-id="${escapeHtml(r.id)}">העתקה</button>
             <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="recipe-delete" data-recipe-id="${escapeHtml(r.id)}">מחיקה</button>
           </div>
         </div>
-      </details>`;
+        <details class="recipe-card-detail" data-recipe-id="${escapeHtml(r.id)}" ${open ? "open" : ""}>
+          <summary class="recipe-card-summary">פירוט</summary>
+          <div class="recipe-card-body">
+            ${body}
+            <label class="checkline recipe-notes-label">טיפים
+              <textarea class="textarea recipe-notes-input" rows="3" maxlength="800" data-recipe-notes="${escapeHtml(r.id)}">${escapeHtml(r.notes ?? "")}</textarea>
+            </label>
+          </div>
+        </details>
+      </article>`;
     })
     .join("");
 }
@@ -5393,7 +5398,7 @@ function wireGlobalHandlers() {
     renderRecipesPage();
   });
   document.getElementById("viewRecipes")?.addEventListener("toggle", (e) => {
-    const card = e.target?.closest?.("details.recipe-card");
+    const card = e.target?.closest?.("details.recipe-card-detail");
     if (!card || e.target !== card) return;
     const id = card.getAttribute("data-recipe-id");
     if (!id) return;
@@ -5431,6 +5436,10 @@ function wireGlobalHandlers() {
     }
   });
   document.getElementById("recipeKitchenBack")?.addEventListener("click", () => closeRecipeKitchen());
+  document.getElementById("recipeKitchenEditRecipe")?.addEventListener("click", () => {
+    if (!kitchenRecipeId) return;
+    openRecipeEditor({ recipeId: kitchenRecipeId });
+  });
   document.getElementById("viewRecipeKitchen")?.addEventListener("click", (e) => {
     if (!kitchenRecipeId) return;
     const editTitle = e.target.closest("[data-action='recipe-kitchen-edit-title']");

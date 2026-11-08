@@ -96,10 +96,11 @@ export function flattenRecipeIngredients(rec) {
     if (g.items) parts.push(g.items);
   }
   for (const b of rec.bowls ?? []) {
+    if (!String(b.items ?? "").trim()) continue;
     const kind = pickRecipeChoice(b.kind, b.kindCustom, RECIPE_BOWL_KINDS);
     const head = [b.label, kind].filter(Boolean).join(" · ");
     if (head) parts.push(head);
-    if (b.items) parts.push(b.items);
+    parts.push(b.items);
   }
   if (rec.extras) {
     parts.push("תוספות", rec.extras);
@@ -369,7 +370,95 @@ export function isRecipeSectionHeading(line) {
   const t = String(line ?? "")
     .replace(/[:：.\s]/g, "")
     .replace(/['׳"]/g, "");
-  return t === "מצרכים" || t === "אופןהכנה" || t === "אופןההכנה";
+  return t === "מצרכים" || t === "אופןהכנה" || t === "אופןההכנה" || t === "הכנה";
+}
+
+export function isRecipeMethodHeading(line) {
+  const t = String(line ?? "")
+    .replace(/[:：.\s]/g, "")
+    .replace(/['׳"]/g, "");
+  return t === "אופןהכנה" || t === "אופןההכנה" || t === "הכנה";
+}
+
+export function stripStepNumber(line) {
+  return String(line ?? "")
+    .replace(/^\s*\d+[\.\)\-\:]\s*/, "")
+    .trim();
+}
+
+function mixGroupHasContent(g) {
+  return Boolean(g && (String(g.items ?? "").trim() || g.tool || String(g.toolCustom ?? "").trim()));
+}
+
+export function splitLegacyRecipeParts(ingredients, steps) {
+  let ings = parseRecipeLines(ingredients);
+  let method = parseRecipeLines(steps);
+  const cutIng = ings.findIndex((l) => isRecipeMethodHeading(l));
+  if (cutIng >= 0 && !method.length) {
+    method = ings.slice(cutIng + 1);
+    ings = ings.slice(0, cutIng);
+  }
+  const cutStep = method.findIndex((l) => isRecipeMethodHeading(l));
+  if (cutStep > 0 && !ings.length) {
+    ings = method.slice(0, cutStep);
+    method = method.slice(cutStep + 1);
+  } else if (cutStep === 0) {
+    method = method.slice(1);
+  }
+  ings = ings.filter((l) => !isRecipeSectionHeading(l));
+  method = method.filter((l) => !isRecipeSectionHeading(l)).map(stripStepNumber).filter(Boolean);
+  return { ingredients: joinRecipeLines(ings), steps: joinRecipeLines(method) };
+}
+
+export function editorListsFromRecipe(rec) {
+  if (!rec) {
+    return { mixGroups: [emptyMixGroup()], bowls: [emptyBowl(1), emptyBowl(2)], steps: [""] };
+  }
+  const mix = (rec.mixGroups ?? []).filter(mixGroupHasContent);
+  const split = splitLegacyRecipeParts(rec.ingredients, rec.steps);
+  const mixGroups = mix.length
+    ? mix
+    : [sanitizeMixGroup({ items: split.ingredients })];
+  const bowls = rec.bowls?.length ? rec.bowls : [emptyBowl(1), emptyBowl(2)];
+  const steps = kitchenRecipeLines(split.steps || rec.steps).map((row) => stripStepNumber(row.text)).filter(Boolean);
+  return {
+    mixGroups: mixGroups.length ? mixGroups : [emptyMixGroup()],
+    bowls,
+    steps: steps.length ? steps : [""],
+  };
+}
+
+export function migrateRecipeStructure(rec) {
+  if (!rec) return false;
+  const split = splitLegacyRecipeParts(rec.ingredients, rec.steps);
+  let changed = false;
+  const mixEmpty = !(rec.mixGroups ?? []).some(mixGroupHasContent);
+  if (mixEmpty && split.ingredients) {
+    rec.mixGroups = [sanitizeMixGroup({ items: split.ingredients })];
+    changed = true;
+  }
+  if (!(rec.bowls ?? []).length) {
+    rec.bowls = [emptyBowl(1), emptyBowl(2)];
+    changed = true;
+  }
+  if (split.steps && split.steps !== rec.steps) {
+    rec.steps = split.steps;
+    changed = true;
+  }
+  const flat = flattenRecipeIngredients(rec);
+  if (flat && flat !== rec.ingredients) {
+    rec.ingredients = flat;
+    changed = true;
+  }
+  return changed;
+}
+
+export function migrateAllRecipes(state) {
+  let n = 0;
+  for (const rec of state.recipes ?? []) {
+    if (migrateRecipeStructure(rec)) n += 1;
+  }
+  return n;
 }
 
 export function kitchenRecipeLines(text) {

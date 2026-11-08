@@ -3313,6 +3313,12 @@ body.app-mode-home .top-menu-dialog{
   background: #fff;
   overflow: hidden;
 }
+.recipe-card-head{
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 10px;
+}
 .recipe-card-summary{
   list-style: none;
   cursor: pointer;
@@ -3372,7 +3378,7 @@ body.app-mode-home .top-menu-dialog{
   color: var(--muted);
   font-size: 0.9rem;
 }
-.recipe-card[open] .recipe-card-summary::after{ content: "▴"; }
+.recipe-card-detail[open] .recipe-card-summary::after{ content: "▴"; }
 
 body.recipe-kitchen-open{
   overflow: hidden;
@@ -3399,6 +3405,9 @@ body.recipe-kitchen-open .bottom-nav{
   z-index: 1;
   background: #fffdf8;
   padding-bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .recipe-kitchen-title-row{
   display: flex;
