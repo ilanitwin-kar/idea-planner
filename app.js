@@ -138,6 +138,9 @@ import {
   getRecipeForDish,
   upsertRecipe,
   updateRecipeNotes,
+  updateRecipeKitchen,
+  toggleRecipeStepImportant,
+  parseRecipeLines,
   deleteRecipe,
   recipeMatchesQuery,
   recipePlainText,
@@ -684,6 +687,107 @@ function setHomeTab(tab) {
 function persistLunchPlanner() {
   saveLunchPlanner(lunchPlanner);
   scheduleCloudBackupIfEnabled();
+}
+
+let kitchenRecipeId = null;
+const kitchenIngDone = new Set();
+const kitchenStepDone = new Set();
+let kitchenWakeLock = null;
+
+async function requestKitchenWakeLock() {
+  try {
+    kitchenWakeLock = await navigator.wakeLock?.request?.("screen");
+    kitchenWakeLock?.addEventListener?.("release", () => {
+      kitchenWakeLock = null;
+    });
+  } catch {
+    kitchenWakeLock = null;
+  }
+}
+
+async function releaseKitchenWakeLock() {
+  try {
+    await kitchenWakeLock?.release?.();
+  } catch {
+    /* ignore */
+  }
+  kitchenWakeLock = null;
+}
+
+function openRecipeKitchen(recipeId) {
+  const rec = findRecipe(lunchPlanner, recipeId);
+  if (!rec) return;
+  kitchenRecipeId = rec.id;
+  kitchenIngDone.clear();
+  kitchenStepDone.clear();
+  document.body.classList.add("recipe-kitchen-open");
+  renderRecipeKitchen();
+  document.getElementById("viewRecipeKitchen")?.scrollTo?.(0, 0);
+  void requestKitchenWakeLock();
+}
+
+function closeRecipeKitchen() {
+  kitchenRecipeId = null;
+  kitchenIngDone.clear();
+  kitchenStepDone.clear();
+  document.body.classList.remove("recipe-kitchen-open");
+  void releaseKitchenWakeLock();
+  renderRecipeKitchen();
+}
+
+function kitchenLineHtml(kind, i, text, done, important) {
+  const star =
+    kind === "step"
+      ? `<button type="button" class="recipe-kitchen-star" data-action="recipe-kitchen-important" data-i="${i}" aria-pressed="${important ? "true" : "false"}">!</button>`
+      : "";
+  return `<div class="recipe-kitchen-line ${done ? "is-done" : ""} ${important ? "is-important" : ""}" data-k="${kind}" data-i="${i}">
+    ${star}
+    <label class="recipe-kitchen-check">
+      <input type="checkbox" data-action="recipe-kitchen-check" data-k="${kind}" data-i="${i}" ${done ? "checked" : ""}>
+      <span>${escapeHtml(text)}</span>
+    </label>
+  </div>`;
+}
+
+function renderRecipeKitchen() {
+  const el = document.getElementById("viewRecipeKitchen");
+  if (!el) return;
+  const rec = kitchenRecipeId ? findRecipe(lunchPlanner, kitchenRecipeId) : null;
+  if (!rec) {
+    el.classList.add("hidden");
+    el.hidden = true;
+    document.body.classList.remove("recipe-kitchen-open");
+    return;
+  }
+  el.classList.remove("hidden");
+  el.hidden = false;
+  document.body.classList.add("recipe-kitchen-open");
+  const titleEl = document.getElementById("recipeKitchenTitle");
+  if (titleEl) titleEl.textContent = rec.title;
+  const ings = parseRecipeLines(rec.ingredients);
+  const ingsRoot = document.getElementById("recipeKitchenIngs");
+  if (ingsRoot) {
+    ingsRoot.innerHTML = ings.length
+      ? ings.map((t, i) => kitchenLineHtml("ing", i, t, kitchenIngDone.has(String(i)), false)).join("")
+      : "";
+  }
+  const wrap = document.getElementById("recipeKitchenIngsWrap");
+  if (wrap) wrap.hidden = !ings.length;
+  const steps = parseRecipeLines(rec.steps);
+  const stepsRoot = document.getElementById("recipeKitchenSteps");
+  const imp = new Set(rec.importantSteps ?? []);
+  if (stepsRoot) {
+    stepsRoot.innerHTML = steps.length
+      ? steps.map((t, i) => kitchenLineHtml("step", i, t, kitchenStepDone.has(String(i)), imp.has(i))).join("")
+      : "";
+  }
+  const noteEl = document.getElementById("recipeKitchenNote");
+  if (noteEl instanceof HTMLTextAreaElement && document.activeElement !== noteEl) {
+    noteEl.value = rec.bakeNote || rec.notes || "";
+  }
+  el.querySelectorAll("[data-action='recipe-bake-result']").forEach((btn) => {
+    btn.classList.toggle("active", Boolean(rec.bakeResult) && btn.getAttribute("data-result") === rec.bakeResult);
+  });
 }
 /** סינון מלאי: `all` או מזהה מיקום (fridge / pantry / freezer) */
 let pantryLocFilter = "all";
@@ -2023,7 +2127,7 @@ function renderLunchMealItemHtml(ent, dateKey) {
   const hasRec = dish ? !!getRecipeForDish(lunchPlanner, dish.id) : false;
   const dishId = dish?.id ?? "";
   const recipeBtn = dishId
-    ? `<button type="button" class="btn btn-ghost" data-action="lunch-recipe" data-dish-id="${escapeHtml(dishId)}">מתכון</button>`
+    ? `<button type="button" class="btn btn-ghost" data-action="lunch-recipe" data-dish-id="${escapeHtml(dishId)}" data-open="${hasRec ? "kitchen" : "edit"}">מתכון</button>`
     : "";
   const actions = `
     <span class="lunch-day-item-actions">
@@ -2524,6 +2628,7 @@ function renderRecipesPage() {
             <textarea class="textarea recipe-notes-input" rows="3" maxlength="800" data-recipe-notes="${escapeHtml(r.id)}" placeholder="מה שינית, מה אהבת, טיפים…">${escapeHtml(r.notes ?? "")}</textarea>
           </label>
           <div class="recipe-card-actions">
+            <button type="button" class="btn" data-action="recipe-kitchen" data-recipe-id="${escapeHtml(r.id)}">למטבח</button>
             <button type="button" class="btn" data-action="recipe-copy" data-recipe-id="${escapeHtml(r.id)}">העתקה</button>
             <button type="button" class="btn btn-ghost" data-action="recipe-edit" data-recipe-id="${escapeHtml(r.id)}">עריכה</button>
             <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="recipe-delete" data-recipe-id="${escapeHtml(r.id)}">מחיקה</button>
@@ -4907,6 +5012,13 @@ function wireGlobalHandlers() {
   document.getElementById("viewLunchPlanner")?.addEventListener("click", (e) => {
     const recipeBtn = e.target.closest("[data-action='lunch-recipe']");
     if (recipeBtn?.dataset.dishId) {
+      if (recipeBtn.dataset.open === "kitchen") {
+        const rec = getRecipeForDish(lunchPlanner, recipeBtn.dataset.dishId);
+        if (rec) {
+          openRecipeKitchen(rec.id);
+          return;
+        }
+      }
       openLunchRecipeDialog(recipeBtn.dataset.dishId);
       return;
     }
@@ -5069,6 +5181,11 @@ function wireGlobalHandlers() {
     else recipesOpenIds.delete(id);
   }, true);
   document.getElementById("viewRecipes")?.addEventListener("click", (e) => {
+    const kitchenBtn = e.target.closest("[data-action='recipe-kitchen']");
+    if (kitchenBtn?.dataset.recipeId) {
+      openRecipeKitchen(kitchenBtn.dataset.recipeId);
+      return;
+    }
     const copyBtn = e.target.closest("[data-action='recipe-copy']");
     if (copyBtn?.dataset.recipeId) {
       const rec = findRecipe(lunchPlanner, copyBtn.dataset.recipeId);
@@ -5087,10 +5204,44 @@ function wireGlobalHandlers() {
       if (!confirm(`למחוק את המתכון «${rec.title}»?`)) return;
       deleteRecipe(lunchPlanner, rec.id);
       recipesOpenIds.delete(rec.id);
+      if (kitchenRecipeId === rec.id) closeRecipeKitchen();
       persistLunchPlanner();
       render();
       toast("המתכון נמחק.");
     }
+  });
+  document.getElementById("recipeKitchenBack")?.addEventListener("click", () => closeRecipeKitchen());
+  document.getElementById("viewRecipeKitchen")?.addEventListener("click", (e) => {
+    const star = e.target.closest("[data-action='recipe-kitchen-important']");
+    if (star && kitchenRecipeId) {
+      toggleRecipeStepImportant(lunchPlanner, kitchenRecipeId, Number(star.getAttribute("data-i")));
+      persistLunchPlanner();
+      renderRecipeKitchen();
+      return;
+    }
+    const resultBtn = e.target.closest("[data-action='recipe-bake-result']");
+    if (resultBtn && kitchenRecipeId) {
+      const next = resultBtn.getAttribute("data-result");
+      const rec = findRecipe(lunchPlanner, kitchenRecipeId);
+      const bakeResult = rec?.bakeResult === next ? "" : next;
+      updateRecipeKitchen(lunchPlanner, kitchenRecipeId, { bakeResult });
+      persistLunchPlanner();
+      renderRecipeKitchen();
+    }
+  });
+  document.getElementById("viewRecipeKitchen")?.addEventListener("change", (e) => {
+    const inp = e.target.closest("[data-action='recipe-kitchen-check']");
+    if (!inp) return;
+    const set = inp.getAttribute("data-k") === "ing" ? kitchenIngDone : kitchenStepDone;
+    const key = String(inp.getAttribute("data-i") ?? "");
+    if (inp.checked) set.add(key);
+    else set.delete(key);
+    inp.closest(".recipe-kitchen-line")?.classList.toggle("is-done", inp.checked);
+  });
+  document.getElementById("recipeKitchenNote")?.addEventListener("change", (e) => {
+    if (!kitchenRecipeId) return;
+    updateRecipeKitchen(lunchPlanner, kitchenRecipeId, { bakeNote: e.target.value });
+    persistLunchPlanner();
   });
   document.getElementById("viewRecipes")?.addEventListener("change", (e) => {
     const ta = e.target?.closest?.("[data-recipe-notes]");
@@ -6121,6 +6272,7 @@ function render() {
   if (appMode === "hourly-schedule") renderHourlySchedulePage();
   if (appMode === "lunch-planner") renderLunchPlannerPage();
   if (appMode === "recipes") renderRecipesPage();
+  renderRecipeKitchen();
 
   const timerDlg = document.getElementById("dailyTimerDialog");
   if (timerDlg instanceof HTMLDialogElement && timerDlg.open) syncDailyTimerDialogUI();
@@ -6149,6 +6301,7 @@ async function boot() {
     if (document.visibilityState === "visible") {
       render();
       tickLocalHourlyReminders(hourlySchedule);
+      if (kitchenRecipeId) void requestKitchenWakeLock();
     }
   });
 

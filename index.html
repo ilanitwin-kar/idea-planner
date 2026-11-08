@@ -775,6 +775,25 @@
       </div>
     </section>
 
+    <section id="viewRecipeKitchen" class="recipe-kitchen hidden" aria-label="מצב אפייה" hidden>
+      <div class="recipe-kitchen-bar">
+        <button type="button" id="recipeKitchenBack" class="btn btn-ghost">יציאה</button>
+      </div>
+      <h1 id="recipeKitchenTitle" class="recipe-kitchen-title"></h1>
+      <details id="recipeKitchenIngsWrap" class="recipe-kitchen-ings" open>
+        <summary>מצרכים</summary>
+        <div id="recipeKitchenIngs"></div>
+      </details>
+      <div id="recipeKitchenSteps" class="recipe-kitchen-steps"></div>
+      <div class="recipe-kitchen-log">
+        <div class="recipe-kitchen-result" role="group" aria-label="תוצאה">
+          <button type="button" class="btn btn-ghost" data-action="recipe-bake-result" data-result="ok">הצליח</button>
+          <button type="button" class="btn btn-ghost" data-action="recipe-bake-result" data-result="no">לא</button>
+        </div>
+        <textarea id="recipeKitchenNote" class="textarea recipe-kitchen-note" rows="5" maxlength="2000"></textarea>
+      </div>
+    </section>
+
     <section id="viewDailyTiming" class="daily-page hidden" aria-label="משימות עם זמן">
       <div class="daily-inner">
         <div class="panel-header daily-header">

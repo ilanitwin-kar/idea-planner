@@ -3315,3 +3315,111 @@ body.app-mode-home .top-menu-dialog{
 }
 .recipe-card[open] .recipe-card-summary::after{ content: "▴"; }
 
+body.recipe-kitchen-open{
+  overflow: hidden;
+}
+body.recipe-kitchen-open .bottom-nav{
+  display: none !important;
+}
+.recipe-kitchen.hidden{
+  display: none !important;
+}
+.recipe-kitchen:not(.hidden){
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: #fffdf8;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: max(10px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom));
+}
+.recipe-kitchen-bar{
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fffdf8;
+  padding-bottom: 8px;
+}
+.recipe-kitchen-title{
+  font-size: 1.85rem;
+  line-height: 1.2;
+  margin: 4px 0 16px;
+  color: var(--heading);
+}
+.recipe-kitchen-ings{
+  margin-bottom: 18px;
+}
+.recipe-kitchen-ings summary{
+  font-size: 1.2rem;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 8px 0;
+}
+.recipe-kitchen-steps{
+  margin-bottom: 28px;
+}
+.recipe-kitchen-line{
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.recipe-kitchen-line.is-done span{
+  opacity: 0.42;
+  text-decoration: line-through;
+}
+.recipe-kitchen-line.is-important{
+  background: #fff3c4;
+  margin-inline: -12px;
+  padding-inline: 12px;
+  border-radius: 12px;
+}
+.recipe-kitchen-check{
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  font-size: 1.42rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.recipe-kitchen-check input{
+  width: 1.45rem;
+  height: 1.45rem;
+  margin-top: 0.28rem;
+  flex-shrink: 0;
+}
+.recipe-kitchen-star{
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  font-weight: 800;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.recipe-kitchen-star[aria-pressed="true"]{
+  background: #f5c400;
+  border-color: #d4a800;
+}
+.recipe-kitchen-log{
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.recipe-kitchen-result{
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.recipe-kitchen-result .btn.active{
+  background: var(--accent-pink-soft);
+  font-weight: 800;
+}
+.recipe-kitchen-note{
+  font-size: 1.15rem;
+  min-height: 8rem;
+  width: 100%;
+}
+

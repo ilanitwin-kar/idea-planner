@@ -165,6 +165,10 @@ function sanitizeRecipe(r) {
   let steps = String(r.steps ?? "").trim();
   const body = String(r.body ?? "").trim();
   if (!steps && body) steps = body;
+  const importantSteps = Array.isArray(r.importantSteps)
+    ? [...new Set(r.importantSteps.map(Number).filter((n) => Number.isInteger(n) && n >= 0))]
+    : [];
+  const bakeResult = r.bakeResult === "ok" || r.bakeResult === "no" ? r.bakeResult : "";
   return {
     id: String(r.id),
     title,
@@ -172,7 +176,17 @@ function sanitizeRecipe(r) {
     ingredients: String(r.ingredients ?? "").trim(),
     steps,
     notes: String(r.notes ?? ""),
+    importantSteps,
+    bakeResult,
+    bakeNote: String(r.bakeNote ?? "").slice(0, 2000),
   };
+}
+
+export function parseRecipeLines(text) {
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export function findDish(state, dishId) {
@@ -499,14 +513,14 @@ export function upsertRecipe(state, { id, dishId, title, ingredients, steps, not
   if (rec) {
     Object.assign(rec, patch);
   } else {
-    rec = {
+    rec = sanitizeRecipe({
       id: id || `lrec_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`,
       dishId: patch.dishId ?? "",
       ingredients: patch.ingredients ?? "",
       steps: patch.steps ?? "",
       notes: patch.notes ?? "",
       title: t,
-    };
+    });
     state.recipes.push(rec);
   }
   state.recipes.sort((a, b) => a.title.localeCompare(b.title, "he"));
@@ -526,6 +540,34 @@ export function updateRecipeNotes(state, recipeId, notes) {
   const rec = findRecipe(state, recipeId);
   if (!rec) return false;
   rec.notes = String(notes ?? "");
+  return true;
+}
+
+export function updateRecipeKitchen(state, recipeId, patch) {
+  const rec = findRecipe(state, recipeId);
+  if (!rec) return false;
+  if ("bakeResult" in patch) {
+    const v = patch.bakeResult;
+    rec.bakeResult = v === "ok" || v === "no" ? v : "";
+  }
+  if ("bakeNote" in patch) rec.bakeNote = String(patch.bakeNote ?? "").slice(0, 2000);
+  if ("importantSteps" in patch) {
+    rec.importantSteps = [
+      ...new Set((patch.importantSteps ?? []).map(Number).filter((n) => Number.isInteger(n) && n >= 0)),
+    ].sort((a, b) => a - b);
+  }
+  return true;
+}
+
+export function toggleRecipeStepImportant(state, recipeId, index) {
+  const rec = findRecipe(state, recipeId);
+  if (!rec) return false;
+  const i = Number(index);
+  if (!Number.isInteger(i) || i < 0) return false;
+  const set = new Set(rec.importantSteps ?? []);
+  if (set.has(i)) set.delete(i);
+  else set.add(i);
+  rec.importantSteps = [...set].sort((a, b) => a - b);
   return true;
 }
 
