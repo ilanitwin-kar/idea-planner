@@ -172,6 +172,7 @@ function sanitizeRecipe(r) {
   return {
     id: String(r.id),
     title,
+    subtitle: String(r.subtitle ?? "").trim().slice(0, 120),
     dishId: r.dishId ? String(r.dishId) : "",
     ingredients: String(r.ingredients ?? "").trim(),
     steps,
@@ -187,6 +188,61 @@ export function parseRecipeLines(text) {
     .split(/\r?\n/)
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+export function joinRecipeLines(lines) {
+  return (Array.isArray(lines) ? lines : [])
+    .map((s) => String(s ?? "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function isRecipeSectionHeading(line) {
+  const t = String(line ?? "")
+    .replace(/[:：.\s]/g, "")
+    .replace(/['׳"]/g, "");
+  return t === "מצרכים" || t === "אופןהכנה" || t === "אופןההכנה";
+}
+
+export function kitchenRecipeLines(text) {
+  return parseRecipeLines(text)
+    .map((value, i) => ({ text: value, i }))
+    .filter((row) => !isRecipeSectionHeading(row.text));
+}
+
+function remapIndexList(list, removedIndex) {
+  return (Array.isArray(list) ? list : [])
+    .filter((n) => n !== removedIndex)
+    .map((n) => (n > removedIndex ? n - 1 : n));
+}
+
+export function replaceRecipeLine(state, recipeId, field, index, text) {
+  const rec = findRecipe(state, recipeId);
+  if (!rec) return false;
+  const key = field === "ing" ? "ingredients" : "steps";
+  const lines = parseRecipeLines(rec[key]);
+  const i = Number(index);
+  if (!Number.isInteger(i) || i < 0 || i >= lines.length) return false;
+  const next = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (!next || isRecipeSectionHeading(next)) {
+    return removeRecipeLine(state, recipeId, field, i);
+  }
+  lines[i] = next;
+  rec[key] = joinRecipeLines(lines);
+  return true;
+}
+
+export function removeRecipeLine(state, recipeId, field, index) {
+  const rec = findRecipe(state, recipeId);
+  if (!rec) return false;
+  const key = field === "ing" ? "ingredients" : "steps";
+  const lines = parseRecipeLines(rec[key]);
+  const i = Number(index);
+  if (!Number.isInteger(i) || i < 0 || i >= lines.length) return false;
+  lines.splice(i, 1);
+  rec[key] = joinRecipeLines(lines);
+  if (key === "steps") rec.importantSteps = remapIndexList(rec.importantSteps, i);
+  return true;
 }
 
 export function findDish(state, dishId) {
@@ -555,6 +611,11 @@ export function updateRecipeKitchen(state, recipeId, patch) {
     rec.importantSteps = [
       ...new Set((patch.importantSteps ?? []).map(Number).filter((n) => Number.isInteger(n) && n >= 0)),
     ].sort((a, b) => a - b);
+  }
+  if ("subtitle" in patch) rec.subtitle = String(patch.subtitle ?? "").trim().slice(0, 120);
+  if ("title" in patch) {
+    const t = String(patch.title ?? "").trim();
+    if (t) rec.title = t;
   }
   return true;
 }

@@ -779,11 +779,14 @@
       <div class="recipe-kitchen-bar">
         <button type="button" id="recipeKitchenBack" class="btn btn-ghost">יציאה</button>
       </div>
-      <h1 id="recipeKitchenTitle" class="recipe-kitchen-title"></h1>
-      <details id="recipeKitchenIngsWrap" class="recipe-kitchen-ings" open>
-        <summary>מצרכים</summary>
-        <div id="recipeKitchenIngs"></div>
-      </details>
+      <div class="recipe-kitchen-title-row">
+        <h1 id="recipeKitchenTitle" class="recipe-kitchen-title"></h1>
+        <button type="button" class="btn btn-ghost" data-action="recipe-kitchen-edit-title">עריכה</button>
+      </div>
+      <input id="recipeKitchenSubtitle" class="recipe-kitchen-subtitle" type="text" maxlength="120" />
+      <h2 class="recipe-kitchen-h">מצרכים</h2>
+      <div id="recipeKitchenIngs" class="recipe-kitchen-ings"></div>
+      <h2 class="recipe-kitchen-h">אופן הכנה</h2>
       <div id="recipeKitchenSteps" class="recipe-kitchen-steps"></div>
       <div class="recipe-kitchen-log">
         <div class="recipe-kitchen-result" role="group" aria-label="תוצאה">

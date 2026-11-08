@@ -140,7 +140,9 @@ import {
   updateRecipeNotes,
   updateRecipeKitchen,
   toggleRecipeStepImportant,
-  parseRecipeLines,
+  kitchenRecipeLines,
+  replaceRecipeLine,
+  removeRecipeLine,
   deleteRecipe,
   recipeMatchesQuery,
   recipePlainText,
@@ -693,6 +695,18 @@ let kitchenRecipeId = null;
 const kitchenIngDone = new Set();
 const kitchenStepDone = new Set();
 let kitchenWakeLock = null;
+let kitchenEditing = null;
+
+function remapKitchenDoneAfterDelete(set, removedIndex) {
+  const next = new Set();
+  for (const k of set) {
+    const n = Number(k);
+    if (!Number.isInteger(n) || n === removedIndex) continue;
+    next.add(String(n > removedIndex ? n - 1 : n));
+  }
+  set.clear();
+  for (const k of next) set.add(k);
+}
 
 async function requestKitchenWakeLock() {
   try {
@@ -720,6 +734,7 @@ function openRecipeKitchen(recipeId) {
   kitchenRecipeId = rec.id;
   kitchenIngDone.clear();
   kitchenStepDone.clear();
+  kitchenEditing = null;
   document.body.classList.add("recipe-kitchen-open");
   renderRecipeKitchen();
   document.getElementById("viewRecipeKitchen")?.scrollTo?.(0, 0);
@@ -730,22 +745,34 @@ function closeRecipeKitchen() {
   kitchenRecipeId = null;
   kitchenIngDone.clear();
   kitchenStepDone.clear();
+  kitchenEditing = null;
   document.body.classList.remove("recipe-kitchen-open");
   void releaseKitchenWakeLock();
   renderRecipeKitchen();
 }
 
 function kitchenLineHtml(kind, i, text, done, important) {
+  const editing = kitchenEditing && kitchenEditing.kind === kind && kitchenEditing.i === i;
   const star =
     kind === "step"
       ? `<button type="button" class="recipe-kitchen-star" data-action="recipe-kitchen-important" data-i="${i}" aria-pressed="${important ? "true" : "false"}">!</button>`
       : "";
+  if (editing) {
+    return `<div class="recipe-kitchen-line is-editing" data-k="${kind}" data-i="${i}">
+      <textarea class="textarea recipe-kitchen-line-edit" data-action="recipe-kitchen-line-text" data-k="${kind}" data-i="${i}" rows="3">${escapeHtml(text)}</textarea>
+      <button type="button" class="btn" data-action="recipe-kitchen-save-line" data-k="${kind}" data-i="${i}">שמירה</button>
+    </div>`;
+  }
   return `<div class="recipe-kitchen-line ${done ? "is-done" : ""} ${important ? "is-important" : ""}" data-k="${kind}" data-i="${i}">
     ${star}
     <label class="recipe-kitchen-check">
       <input type="checkbox" data-action="recipe-kitchen-check" data-k="${kind}" data-i="${i}" ${done ? "checked" : ""}>
       <span>${escapeHtml(text)}</span>
     </label>
+    <span class="recipe-kitchen-line-actions">
+      <button type="button" class="btn btn-ghost" data-action="recipe-kitchen-edit-line" data-k="${kind}" data-i="${i}">עריכה</button>
+      <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="recipe-kitchen-delete-line" data-k="${kind}" data-i="${i}">מחיקה</button>
+    </span>
   </div>`;
 }
 
@@ -763,23 +790,35 @@ function renderRecipeKitchen() {
   el.hidden = false;
   document.body.classList.add("recipe-kitchen-open");
   const titleEl = document.getElementById("recipeKitchenTitle");
-  if (titleEl) titleEl.textContent = rec.title;
-  const ings = parseRecipeLines(rec.ingredients);
+  const titleEditing = kitchenEditing?.kind === "title";
+  if (titleEl) {
+    if (titleEditing) {
+      if (!(document.activeElement?.classList.contains("recipe-kitchen-title-input"))) {
+        titleEl.outerHTML = `<input id="recipeKitchenTitle" class="input recipe-kitchen-title-input" type="text" maxlength="120" value="${escapeHtml(rec.title)}" />`;
+        queueMicrotask(() => document.getElementById("recipeKitchenTitle")?.focus());
+      }
+    } else if (titleEl.tagName === "INPUT") {
+      titleEl.outerHTML = `<h1 id="recipeKitchenTitle" class="recipe-kitchen-title">${escapeHtml(rec.title)}</h1>`;
+    } else {
+      titleEl.textContent = rec.title;
+    }
+  }
+  const subEl = document.getElementById("recipeKitchenSubtitle");
+  if (subEl instanceof HTMLInputElement && document.activeElement !== subEl) {
+    subEl.value = rec.subtitle ?? "";
+  }
   const ingsRoot = document.getElementById("recipeKitchenIngs");
   if (ingsRoot) {
-    ingsRoot.innerHTML = ings.length
-      ? ings.map((t, i) => kitchenLineHtml("ing", i, t, kitchenIngDone.has(String(i)), false)).join("")
-      : "";
+    ingsRoot.innerHTML = kitchenRecipeLines(rec.ingredients)
+      .map((row) => kitchenLineHtml("ing", row.i, row.text, kitchenIngDone.has(String(row.i)), false))
+      .join("");
   }
-  const wrap = document.getElementById("recipeKitchenIngsWrap");
-  if (wrap) wrap.hidden = !ings.length;
-  const steps = parseRecipeLines(rec.steps);
   const stepsRoot = document.getElementById("recipeKitchenSteps");
   const imp = new Set(rec.importantSteps ?? []);
   if (stepsRoot) {
-    stepsRoot.innerHTML = steps.length
-      ? steps.map((t, i) => kitchenLineHtml("step", i, t, kitchenStepDone.has(String(i)), imp.has(i))).join("")
-      : "";
+    stepsRoot.innerHTML = kitchenRecipeLines(rec.steps)
+      .map((row) => kitchenLineHtml("step", row.i, row.text, kitchenStepDone.has(String(row.i)), imp.has(row.i)))
+      .join("");
   }
   const noteEl = document.getElementById("recipeKitchenNote");
   if (noteEl instanceof HTMLTextAreaElement && document.activeElement !== noteEl) {
@@ -5212,21 +5251,73 @@ function wireGlobalHandlers() {
   });
   document.getElementById("recipeKitchenBack")?.addEventListener("click", () => closeRecipeKitchen());
   document.getElementById("viewRecipeKitchen")?.addEventListener("click", (e) => {
+    if (!kitchenRecipeId) return;
+    const editTitle = e.target.closest("[data-action='recipe-kitchen-edit-title']");
+    if (editTitle) {
+      kitchenEditing = { kind: "title", i: -1 };
+      renderRecipeKitchen();
+      return;
+    }
+    const editLine = e.target.closest("[data-action='recipe-kitchen-edit-line']");
+    if (editLine) {
+      kitchenEditing = { kind: editLine.getAttribute("data-k"), i: Number(editLine.getAttribute("data-i")) };
+      renderRecipeKitchen();
+      queueMicrotask(() => document.querySelector(".recipe-kitchen-line-edit")?.focus());
+      return;
+    }
+    const saveLine = e.target.closest("[data-action='recipe-kitchen-save-line']");
+    if (saveLine) {
+      const kind = saveLine.getAttribute("data-k");
+      const i = Number(saveLine.getAttribute("data-i"));
+      const ta = document.querySelector(`.recipe-kitchen-line-edit[data-k="${kind}"][data-i="${i}"]`);
+      replaceRecipeLine(lunchPlanner, kitchenRecipeId, kind, i, ta?.value ?? "");
+      persistLunchPlanner();
+      kitchenEditing = null;
+      renderRecipeKitchen();
+      return;
+    }
+    const delLine = e.target.closest("[data-action='recipe-kitchen-delete-line']");
+    if (delLine) {
+      const kind = delLine.getAttribute("data-k");
+      const i = Number(delLine.getAttribute("data-i"));
+      if (!confirm("למחוק את הסעיף?")) return;
+      removeRecipeLine(lunchPlanner, kitchenRecipeId, kind, i);
+      remapKitchenDoneAfterDelete(kind === "ing" ? kitchenIngDone : kitchenStepDone, i);
+      persistLunchPlanner();
+      kitchenEditing = null;
+      renderRecipeKitchen();
+      return;
+    }
     const star = e.target.closest("[data-action='recipe-kitchen-important']");
-    if (star && kitchenRecipeId) {
+    if (star) {
       toggleRecipeStepImportant(lunchPlanner, kitchenRecipeId, Number(star.getAttribute("data-i")));
       persistLunchPlanner();
       renderRecipeKitchen();
       return;
     }
     const resultBtn = e.target.closest("[data-action='recipe-bake-result']");
-    if (resultBtn && kitchenRecipeId) {
+    if (resultBtn) {
       const next = resultBtn.getAttribute("data-result");
       const rec = findRecipe(lunchPlanner, kitchenRecipeId);
       const bakeResult = rec?.bakeResult === next ? "" : next;
       updateRecipeKitchen(lunchPlanner, kitchenRecipeId, { bakeResult });
       persistLunchPlanner();
       renderRecipeKitchen();
+    }
+  });
+  document.getElementById("viewRecipeKitchen")?.addEventListener("focusout", (e) => {
+    if (e.target?.id === "recipeKitchenTitle" && e.target instanceof HTMLInputElement && kitchenRecipeId) {
+      updateRecipeKitchen(lunchPlanner, kitchenRecipeId, { title: e.target.value });
+      persistLunchPlanner();
+      kitchenEditing = null;
+      renderRecipeKitchen();
+    }
+  });
+  document.getElementById("viewRecipeKitchen")?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    if (e.target?.id === "recipeKitchenTitle") {
+      e.preventDefault();
+      e.target.blur();
     }
   });
   document.getElementById("viewRecipeKitchen")?.addEventListener("change", (e) => {
@@ -5241,6 +5332,11 @@ function wireGlobalHandlers() {
   document.getElementById("recipeKitchenNote")?.addEventListener("change", (e) => {
     if (!kitchenRecipeId) return;
     updateRecipeKitchen(lunchPlanner, kitchenRecipeId, { bakeNote: e.target.value });
+    persistLunchPlanner();
+  });
+  document.getElementById("recipeKitchenSubtitle")?.addEventListener("change", (e) => {
+    if (!kitchenRecipeId) return;
+    updateRecipeKitchen(lunchPlanner, kitchenRecipeId, { subtitle: e.target.value });
     persistLunchPlanner();
   });
   document.getElementById("viewRecipes")?.addEventListener("change", (e) => {
