@@ -118,6 +118,8 @@ export function recipeBakeHeadline(rec) {
   if (temp) bits.push(`${temp}°`);
   const mode = pickRecipeChoice(rec.bakeMode, rec.bakeModeCustom, RECIPE_BAKE_MODES);
   if (mode) bits.push(mode);
+  const time = String(rec.bakeTime ?? "").trim();
+  if (time) bits.push(time);
   return bits.join(" · ");
 }
 
@@ -338,6 +340,7 @@ function sanitizeRecipe(r) {
     bakeTempCustom: temps.bakeTempCustom,
     bakeMode,
     bakeModeCustom: String(r.bakeModeCustom ?? "").trim().slice(0, 80),
+    bakeTime: String(r.bakeTime ?? "").trim().slice(0, 40),
     mixGroups,
     bowls,
     extras,

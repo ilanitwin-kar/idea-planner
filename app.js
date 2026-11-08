@@ -2176,6 +2176,7 @@ function openRecipeEditor({ recipeId = "", dishId = "", title = "" } = {}) {
   document.getElementById("lunchRecipeBakeTempCustom").value = rec?.bakeTempCustom ?? "";
   fillRecipeChoiceSelect(document.getElementById("lunchRecipeBakeMode"), RECIPE_BAKE_MODES, rec?.bakeMode);
   document.getElementById("lunchRecipeBakeModeCustom").value = rec?.bakeModeCustom ?? "";
+  document.getElementById("lunchRecipeBakeTime").value = rec?.bakeTime ?? "";
   document.getElementById("lunchRecipeExtras").value = rec?.extras ?? "";
   document.getElementById("lunchRecipeNotes").value = rec?.notes ?? "";
   renderRecipeEditorLists(editorListsFromRecipe(rec));
@@ -5563,6 +5564,7 @@ function wireGlobalHandlers() {
       bakeTempCustom: document.getElementById("lunchRecipeBakeTempCustom")?.value ?? "",
       bakeMode: document.getElementById("lunchRecipeBakeMode")?.value ?? "",
       bakeModeCustom: document.getElementById("lunchRecipeBakeModeCustom")?.value ?? "",
+      bakeTime: document.getElementById("lunchRecipeBakeTime")?.value ?? "",
       mixGroups: lists.mixGroups,
       bowls: lists.bowls,
       extras: document.getElementById("lunchRecipeExtras")?.value ?? "",
