@@ -866,7 +866,8 @@ function renderRecipeKitchen() {
   }
   const noteEl = document.getElementById("recipeKitchenNote");
   if (noteEl instanceof HTMLTextAreaElement && document.activeElement !== noteEl) {
-    noteEl.value = rec.bakeNote || rec.notes || "";
+    const bakeNote = String(rec.bakeNote ?? "").trim();
+    noteEl.value = bakeNote && bakeNote !== tips ? rec.bakeNote : "";
   }
   el.querySelectorAll("[data-action='recipe-bake-result']").forEach((btn) => {
     btn.classList.toggle("active", Boolean(rec.bakeResult) && btn.getAttribute("data-result") === rec.bakeResult);
