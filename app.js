@@ -150,6 +150,10 @@ import {
   RECIPE_BAKE_MODES,
   RECIPE_MIX_TOOLS,
   RECIPE_BOWL_KINDS,
+  RECIPE_VESSELS,
+  RECIPE_HEAT_SOURCES,
+  RECIPE_COVERS,
+  parsePastedRecipe,
   emptyMixGroup,
   emptyBowl,
   editorListsFromRecipe,
@@ -2118,7 +2122,7 @@ function renderRecipeEditorLists({ mixGroups, bowls, steps }) {
         <textarea class="textarea" data-f="items" rows="3">${escapeHtml(g.items ?? "")}</textarea>
         <div class="recipe-dd-row">
           <select class="select" data-f="tool">${recipeEditorSelectOptions(RECIPE_MIX_TOOLS, g.tool)}</select>
-          <input class="input" data-f="toolCustom" type="text" maxlength="80" value="${escapeHtml(g.toolCustom ?? "")}" />
+          <input class="input" data-f="toolCustom" type="text" maxlength="120" value="${escapeHtml(g.toolCustom ?? "")}" />
         </div>
         <button type="button" class="btn btn-ghost hourly-edit-delete" data-action="recipe-editor-remove-mix">מחיקה</button>
       </div>`,
@@ -2154,6 +2158,68 @@ function renderRecipeEditorLists({ mixGroups, bowls, steps }) {
   }
 }
 
+function currentRecipeKind() {
+  const on = document.querySelector(".recipe-kind-tab.active");
+  return on?.getAttribute("data-recipe-kind") === "cook" ? "cook" : "bake";
+}
+
+function setRecipeKind(kind) {
+  const k = kind === "cook" ? "cook" : "bake";
+  document.querySelectorAll(".recipe-kind-tab").forEach((btn) => {
+    const on = btn.getAttribute("data-recipe-kind") === k;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  document.getElementById("lunchRecipeBakeFields")?.classList.toggle("hidden", k !== "bake");
+  document.getElementById("lunchRecipeCookFields")?.classList.toggle("hidden", k !== "cook");
+}
+
+function fillRecipeEditorMeta(rec) {
+  fillRecipeChoiceSelect(document.getElementById("lunchRecipePanShape"), RECIPE_PAN_SHAPES, rec?.panShape);
+  const panCustom = document.getElementById("lunchRecipePanShapeCustom");
+  if (panCustom) panCustom.value = rec?.panShapeCustom ?? "";
+  const panSize = document.getElementById("lunchRecipePanSize");
+  if (panSize) panSize.value = rec?.panSize ?? "";
+  fillRecipeChoiceSelect(document.getElementById("lunchRecipeBakeTemp"), [], rec?.bakeTemp, { numeric: true });
+  const tempC = document.getElementById("lunchRecipeBakeTempCustom");
+  if (tempC) tempC.value = rec?.bakeTempCustom ?? "";
+  fillRecipeChoiceSelect(document.getElementById("lunchRecipeBakeMode"), RECIPE_BAKE_MODES, rec?.bakeMode);
+  const modeC = document.getElementById("lunchRecipeBakeModeCustom");
+  if (modeC) modeC.value = rec?.bakeModeCustom ?? "";
+  const bakeTime = document.getElementById("lunchRecipeBakeTime");
+  if (bakeTime) bakeTime.value = rec?.bakeTime ?? "";
+  fillRecipeChoiceSelect(document.getElementById("lunchRecipeVessel"), RECIPE_VESSELS, rec?.vessel);
+  const vesselC = document.getElementById("lunchRecipeVesselCustom");
+  if (vesselC) vesselC.value = rec?.vesselCustom ?? "";
+  fillRecipeChoiceSelect(document.getElementById("lunchRecipeHeat"), RECIPE_HEAT_SOURCES, rec?.heatSource);
+  const heatC = document.getElementById("lunchRecipeHeatCustom");
+  if (heatC) heatC.value = rec?.heatSourceCustom ?? "";
+  fillRecipeChoiceSelect(document.getElementById("lunchRecipeCover"), RECIPE_COVERS, rec?.cover);
+  const coverC = document.getElementById("lunchRecipeCoverCustom");
+  if (coverC) coverC.value = rec?.coverCustom ?? "";
+  const cookTime = document.getElementById("lunchRecipeCookTime");
+  if (cookTime) cookTime.value = rec?.cookTime ?? "";
+}
+
+function applyParsedRecipeToEditor(parsed) {
+  if (!parsed) return;
+  const titleEl = document.getElementById("lunchRecipeTitle");
+  const subEl = document.getElementById("lunchRecipeSubtitle");
+  if (titleEl) titleEl.value = parsed.title ?? "";
+  if (subEl) subEl.value = parsed.subtitle ?? "";
+  setRecipeKind(parsed.cookKind);
+  fillRecipeEditorMeta(parsed);
+  const extras = document.getElementById("lunchRecipeExtras");
+  if (extras) extras.value = parsed.extras ?? "";
+  const notes = document.getElementById("lunchRecipeNotes");
+  if (notes) notes.value = parsed.notes ?? "";
+  renderRecipeEditorLists({
+    mixGroups: parsed.mixGroups?.length ? parsed.mixGroups : [emptyMixGroup()],
+    bowls: parsed.bowls?.length ? parsed.bowls : [emptyBowl(1), emptyBowl(2)],
+    steps: parsed.steps?.length ? parsed.steps : [""],
+  });
+}
+
 function openRecipeEditor({ recipeId = "", dishId = "", title = "" } = {}) {
   const dlg = document.getElementById("lunchRecipeDialog");
   if (!(dlg instanceof HTMLDialogElement)) return;
@@ -2169,14 +2235,10 @@ function openRecipeEditor({ recipeId = "", dishId = "", title = "" } = {}) {
   if (dishLine) dishLine.textContent = dish ? dish.name : "";
   document.getElementById("lunchRecipeTitle").value = rec?.title || title || dish?.name || "";
   document.getElementById("lunchRecipeSubtitle").value = rec?.subtitle ?? "";
-  fillRecipeChoiceSelect(document.getElementById("lunchRecipePanShape"), RECIPE_PAN_SHAPES, rec?.panShape);
-  document.getElementById("lunchRecipePanShapeCustom").value = rec?.panShapeCustom ?? "";
-  document.getElementById("lunchRecipePanSize").value = rec?.panSize ?? "";
-  fillRecipeChoiceSelect(document.getElementById("lunchRecipeBakeTemp"), [], rec?.bakeTemp, { numeric: true });
-  document.getElementById("lunchRecipeBakeTempCustom").value = rec?.bakeTempCustom ?? "";
-  fillRecipeChoiceSelect(document.getElementById("lunchRecipeBakeMode"), RECIPE_BAKE_MODES, rec?.bakeMode);
-  document.getElementById("lunchRecipeBakeModeCustom").value = rec?.bakeModeCustom ?? "";
-  document.getElementById("lunchRecipeBakeTime").value = rec?.bakeTime ?? "";
+  const pasteEl = document.getElementById("lunchRecipePaste");
+  if (pasteEl) pasteEl.value = "";
+  setRecipeKind(rec?.cookKind === "cook" ? "cook" : "bake");
+  fillRecipeEditorMeta(rec);
   document.getElementById("lunchRecipeExtras").value = rec?.extras ?? "";
   document.getElementById("lunchRecipeNotes").value = rec?.notes ?? "";
   renderRecipeEditorLists(editorListsFromRecipe(rec));
@@ -2787,12 +2849,13 @@ function renderRecipesPage() {
       const dishLine = dish ? `<div class="recipe-card-dish">מנה: ${escapeHtml(dishLabelForSelect(dish))}</div>` : "";
       const open = recipesOpenIds.has(r.id);
       const bake = recipeBakeHeadline(r);
+      const bakeLabel = r.cookKind === "cook" ? "בישול" : "אפייה";
       const ings = recipeIngredientSections(r)
         .map((sec) => recipeBlockHtml(sec.heading, sec.lines.map((row) => row.text).join("\n")))
         .join("");
       const stepLines = kitchenRecipeLines(r.steps);
       const body =
-        (bake ? recipeBlockHtml("אפייה", bake) : "") +
+        (bake ? recipeBlockHtml(bakeLabel, bake) : "") +
         ings +
         (stepLines.length
           ? recipeBlockHtml(
@@ -5356,6 +5419,20 @@ function wireGlobalHandlers() {
   document.getElementById("recipesAddBtn")?.addEventListener("click", () => {
     openRecipeEditor({});
   });
+  document.getElementById("lunchRecipePasteApply")?.addEventListener("click", () => {
+    const raw = document.getElementById("lunchRecipePaste")?.value ?? "";
+    const parsed = parsePastedRecipe(raw);
+    if (!parsed) {
+      toast("הדביקי מתכון.");
+      return;
+    }
+    applyParsedRecipeToEditor(parsed);
+  });
+  document.querySelector(".recipe-kind-toggle")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-recipe-kind]");
+    if (!btn) return;
+    setRecipeKind(btn.getAttribute("data-recipe-kind"));
+  });
   document.getElementById("lunchRecipeAddMix")?.addEventListener("click", () => {
     const cur = collectRecipeEditor();
     cur.mixGroups.push(emptyMixGroup());
@@ -5565,6 +5642,14 @@ function wireGlobalHandlers() {
       bakeMode: document.getElementById("lunchRecipeBakeMode")?.value ?? "",
       bakeModeCustom: document.getElementById("lunchRecipeBakeModeCustom")?.value ?? "",
       bakeTime: document.getElementById("lunchRecipeBakeTime")?.value ?? "",
+      cookKind: currentRecipeKind(),
+      vessel: document.getElementById("lunchRecipeVessel")?.value ?? "",
+      vesselCustom: document.getElementById("lunchRecipeVesselCustom")?.value ?? "",
+      heatSource: document.getElementById("lunchRecipeHeat")?.value ?? "",
+      heatSourceCustom: document.getElementById("lunchRecipeHeatCustom")?.value ?? "",
+      cover: document.getElementById("lunchRecipeCover")?.value ?? "",
+      coverCustom: document.getElementById("lunchRecipeCoverCustom")?.value ?? "",
+      cookTime: document.getElementById("lunchRecipeCookTime")?.value ?? "",
       mixGroups: lists.mixGroups,
       bowls: lists.bowls,
       extras: document.getElementById("lunchRecipeExtras")?.value ?? "",

@@ -658,7 +658,15 @@
         <label class="checkline">כותרת שנייה
           <input id="lunchRecipeSubtitle" class="input" type="text" maxlength="120" />
         </label>
-        <div class="recipe-editor-bake">
+        <label class="checkline">הדבקת מתכון
+          <textarea id="lunchRecipePaste" class="textarea" rows="6"></textarea>
+        </label>
+        <button type="button" class="btn" id="lunchRecipePasteApply">סידור מההדבקה</button>
+        <div class="recipe-kind-toggle" role="tablist" aria-label="אפייה או בישול">
+          <button type="button" class="tab recipe-kind-tab active" data-recipe-kind="bake" role="tab" aria-selected="true">אפייה</button>
+          <button type="button" class="tab recipe-kind-tab" data-recipe-kind="cook" role="tab" aria-selected="false">בישול</button>
+        </div>
+        <div id="lunchRecipeBakeFields" class="recipe-editor-bake">
           <div class="recipe-editor-field">
             <div class="recipe-editor-label">תבנית</div>
             <select id="lunchRecipePanShape" class="select"></select>
@@ -679,6 +687,27 @@
           <div class="recipe-editor-field">
             <div class="recipe-editor-label">זמן אפייה</div>
             <input id="lunchRecipeBakeTime" class="input" type="text" maxlength="40" />
+          </div>
+        </div>
+        <div id="lunchRecipeCookFields" class="recipe-editor-bake hidden">
+          <div class="recipe-editor-field">
+            <div class="recipe-editor-label">כלי</div>
+            <select id="lunchRecipeVessel" class="select"></select>
+            <input id="lunchRecipeVesselCustom" class="input" type="text" maxlength="80" aria-label="כלי — התאמה אישית" />
+          </div>
+          <div class="recipe-editor-field">
+            <div class="recipe-editor-label">חום</div>
+            <select id="lunchRecipeHeat" class="select"></select>
+            <input id="lunchRecipeHeatCustom" class="input" type="text" maxlength="80" aria-label="חום — התאמה אישית" />
+          </div>
+          <div class="recipe-editor-field">
+            <div class="recipe-editor-label">כיסוי</div>
+            <select id="lunchRecipeCover" class="select"></select>
+            <input id="lunchRecipeCoverCustom" class="input" type="text" maxlength="80" aria-label="כיסוי — התאמה אישית" />
+          </div>
+          <div class="recipe-editor-field">
+            <div class="recipe-editor-label">זמן בישול</div>
+            <input id="lunchRecipeCookTime" class="input" type="text" maxlength="40" />
           </div>
         </div>
         <div class="recipe-editor-label">מצרכים</div>

@@ -34,6 +34,23 @@ export const RECIPE_BOWL_KINDS = [
   { id: "dry", label: "יבשים" },
 ];
 
+export const RECIPE_VESSELS = [
+  { id: "pot", label: "סיר" },
+  { id: "pan", label: "מחבת" },
+];
+
+export const RECIPE_HEAT_SOURCES = [
+  { id: "gas", label: "גז" },
+  { id: "induction", label: "אינדוקציה" },
+  { id: "electric", label: "חשמל" },
+];
+
+export const RECIPE_COVERS = [
+  { id: "covered", label: "מכוסה" },
+  { id: "open", label: "גלוי" },
+  { id: "half", label: "חצי מכוסה" },
+];
+
 export function recipeBakeTempOptions() {
   const out = [];
   for (let t = 50; t <= 300; t += 5) out.push(String(t));
@@ -60,7 +77,7 @@ function sanitizeMixGroup(g) {
   return {
     items: String(g.items ?? "").trim(),
     tool,
-    toolCustom: String(g.toolCustom ?? "").trim().slice(0, 80),
+    toolCustom: String(g.toolCustom ?? "").trim().slice(0, 120),
   };
 }
 
@@ -91,7 +108,7 @@ function sanitizeBakeTemp(raw, custom) {
 export function flattenRecipeIngredients(rec) {
   const parts = [];
   for (const g of rec.mixGroups ?? []) {
-    const h = pickRecipeChoice(g.tool, g.toolCustom, RECIPE_MIX_TOOLS);
+    const h = mixGroupHeading(g);
     if (h) parts.push(h);
     if (g.items) parts.push(g.items);
   }
@@ -108,8 +125,29 @@ export function flattenRecipeIngredients(rec) {
   return parts.join("\n").trim();
 }
 
-export function recipeBakeHeadline(rec) {
+export function mixGroupHeading(g) {
+  const tool = RECIPE_MIX_TOOLS.find((x) => x.id === g?.tool)?.label ?? "";
+  const custom = String(g?.toolCustom ?? "").trim();
+  const parts = [];
+  if (tool) parts.push(tool);
+  if (custom && custom !== tool) parts.push(custom);
+  return parts.join(" · ") || "מצרכים";
+}
+
+export function recipeCookHeadline(rec) {
   if (!rec) return "";
+  if (rec.cookKind === "cook") {
+    const bits = [];
+    const vessel = pickRecipeChoice(rec.vessel, rec.vesselCustom, RECIPE_VESSELS);
+    if (vessel) bits.push(vessel);
+    const heat = pickRecipeChoice(rec.heatSource, rec.heatSourceCustom, RECIPE_HEAT_SOURCES);
+    if (heat) bits.push(heat);
+    const cover = pickRecipeChoice(rec.cover, rec.coverCustom, RECIPE_COVERS);
+    if (cover) bits.push(cover);
+    const time = String(rec.cookTime ?? "").trim();
+    if (time) bits.push(time);
+    return bits.join(" · ");
+  }
   const bits = [];
   const shape = pickRecipeChoice(rec.panShape, rec.panShapeCustom, RECIPE_PAN_SHAPES);
   const size = String(rec.panSize ?? "").trim();
@@ -121,6 +159,10 @@ export function recipeBakeHeadline(rec) {
   const time = String(rec.bakeTime ?? "").trim();
   if (time) bits.push(time);
   return bits.join(" · ");
+}
+
+export function recipeBakeHeadline(rec) {
+  return recipeCookHeadline(rec);
 }
 
 export function recipeIngredientSections(rec) {
@@ -137,7 +179,7 @@ export function recipeIngredientSections(rec) {
       if (!lines.length) return;
       sections.push({
         key: `mix:${i}`,
-        heading: pickRecipeChoice(g.tool, g.toolCustom, RECIPE_MIX_TOOLS) || "מצרכים",
+        heading: mixGroupHeading(g),
         lines,
       });
     });
@@ -341,6 +383,14 @@ function sanitizeRecipe(r) {
     bakeMode,
     bakeModeCustom: String(r.bakeModeCustom ?? "").trim().slice(0, 80),
     bakeTime: String(r.bakeTime ?? "").trim().slice(0, 40),
+    cookKind: r.cookKind === "cook" ? "cook" : "bake",
+    vessel: RECIPE_VESSELS.some((x) => x.id === r.vessel) ? r.vessel : "",
+    vesselCustom: String(r.vesselCustom ?? "").trim().slice(0, 80),
+    heatSource: RECIPE_HEAT_SOURCES.some((x) => x.id === r.heatSource) ? r.heatSource : "",
+    heatSourceCustom: String(r.heatSourceCustom ?? "").trim().slice(0, 80),
+    cover: RECIPE_COVERS.some((x) => x.id === r.cover) ? r.cover : "",
+    coverCustom: String(r.coverCustom ?? "").trim().slice(0, 80),
+    cookTime: String(r.cookTime ?? "").trim().slice(0, 40),
     mixGroups,
     bowls,
     extras,
@@ -411,6 +461,226 @@ export function splitLegacyRecipeParts(ingredients, steps) {
   ings = ings.filter((l) => !isRecipeSectionHeading(l));
   method = method.filter((l) => !isRecipeSectionHeading(l)).map(stripStepNumber).filter(Boolean);
   return { ingredients: joinRecipeLines(ings), steps: joinRecipeLines(method) };
+}
+
+function compactHeading(line) {
+  return String(line ?? "")
+    .replace(/[:：]/g, "")
+    .replace(/^\*+\s*/, "")
+    .replace(/\s+/g, "")
+    .replace(/['׳"]/g, "");
+}
+
+function pasteMajorSection(line) {
+  const t = compactHeading(line);
+  if (t === "מצרכים") return "ings";
+  if (t === "אופןהכנה" || t === "אופןההכנה" || t === "הכנה") return "method";
+  if (t.startsWith("טיפים") || t.startsWith("הערות")) return "tips";
+  return "";
+}
+
+function guessMixTool(heading) {
+  const h = String(heading ?? "");
+  if (/מיקסר/.test(h)) return "mixer";
+  if (/מטרפה/.test(h)) return "whisk";
+  if (/מעבד/.test(h)) return "processor";
+  return "";
+}
+
+function isExtrasHeading(heading) {
+  const h = String(heading ?? "");
+  return /עזרים|גימור|קישוט|הגשה|לפזר/.test(h);
+}
+
+function isBowlHeading(heading) {
+  const h = String(heading ?? "");
+  if (/רטובים/.test(h)) return { kind: "wet", label: heading };
+  if (/יבשים/.test(h)) return { kind: "dry", label: heading };
+  const m = h.match(/קערה\s*(\d+)?/);
+  if (m) return { kind: "", label: m[0] };
+  return null;
+}
+
+export function parsePastedRecipe(raw) {
+  const src = String(raw ?? "").replace(/\r/g, "").trim();
+  if (!src) return null;
+  const rows = src.split("\n").map((line) => {
+    const indent = (line.match(/^\s*/) || [""])[0].length;
+    const trimmed = line.trim();
+    const bullet = /^(\*+|•|·|-)\s+/.test(trimmed);
+    const text = trimmed.replace(/^(\*+|•|·|-)\s+/, "").trim();
+    return { indent, bullet, text };
+  }).filter((r) => r.text);
+
+  const out = {
+    cookKind: "bake",
+    title: "",
+    subtitle: "",
+    panShape: "",
+    panShapeCustom: "",
+    panSize: "",
+    bakeTemp: "",
+    bakeTempCustom: "",
+    bakeMode: "",
+    bakeModeCustom: "",
+    bakeTime: "",
+    vessel: "",
+    vesselCustom: "",
+    heatSource: "",
+    heatSourceCustom: "",
+    cover: "",
+    coverCustom: "",
+    cookTime: "",
+    mixGroups: [],
+    bowls: [],
+    extras: "",
+    steps: [],
+    notes: "",
+  };
+
+  let i = 0;
+  if (rows[0] && !pasteMajorSection(rows[0].text)) {
+    out.title = rows[0].text.replace(/\s+/g, " ").slice(0, 120);
+    i = 1;
+    const paren = out.title.match(/^(.*?)\s*[\(（](.+?)[\)）]\s*$/);
+    if (paren) {
+      out.title = paren[1].trim().slice(0, 120);
+      out.subtitle = paren[2].trim().slice(0, 120);
+    } else if (rows[1] && /^\(.*\)$/.test(rows[1].text) && !pasteMajorSection(rows[1].text)) {
+      out.subtitle = rows[1].text.replace(/^\(|\)$/g, "").trim().slice(0, 120);
+      i = 2;
+    }
+  }
+
+  const blob = src;
+  const bakeHits = (blob.match(/תנור|אופים|אפייה|טורבו|°\s*C|מעלות/g) || []).length;
+  const cookHits = (blob.match(/מבשלים|בישול בסיר|\bסיר\b|מחבת|על האש|אינדוקציה/g) || []).length;
+  if (cookHits > bakeHits) out.cookKind = "cook";
+
+  const size = blob.match(/(\d{2,3})\s*[x×X]\s*(\d{2,3})/);
+  if (size) {
+    out.panSize = `${size[1]}×${size[2]}`;
+    out.panShape = "rect";
+  } else {
+    const dia = blob.match(/קוטר\s*(\d{2,3})|תבנית\s*(\d{2,3})\s*ס/);
+    if (dia) {
+      out.panSize = dia[1] || dia[2];
+      out.panShape = "round";
+    }
+  }
+
+  const temps = [...blob.matchAll(/(\d{2,3})\s*°\s*C/gi)].map((m) => m[1]);
+  if (temps[0]) out.bakeTemp = temps[0];
+  if (temps[1] && temps[1] !== temps[0]) out.bakeTempCustom = temps[1];
+
+  if (/טורבו/.test(blob)) out.bakeMode = "turbo";
+  else if (/עליון.{0,6}תחתון|חום סטטי/.test(blob)) out.bakeMode = "topbottom";
+  else if (/גריל/.test(blob)) out.bakeMode = "grill";
+  if (/עליון.{0,6}תחתון|חום סטטי/.test(blob) && out.bakeMode === "turbo") {
+    out.bakeModeCustom = "חום עליון תחתון";
+  }
+
+  const bakeTime = blob.match(/אופים?\s+(\d+\s*[–\-]\s*\d+|\d+)\s*דק/);
+  if (bakeTime) out.bakeTime = `${bakeTime[1].replace(/\s+/g, "")} דקות`;
+  const cookTime = blob.match(/מבשלים?\s+(\d+\s*[–\-]\s*\d+|\d+)\s*דק/);
+  if (cookTime) out.cookTime = `${cookTime[1].replace(/\s+/g, "")} דקות`;
+
+  if (/\bסיר\b/.test(blob)) out.vessel = "pot";
+  else if (/מחבת/.test(blob)) out.vessel = "pan";
+  if (/אינדוקציה/.test(blob)) out.heatSource = "induction";
+  else if (/\bגז\b|על האש/.test(blob)) out.heatSource = "gas";
+  if (/מכוסה/.test(blob)) out.cover = "covered";
+  else if (/גלוי/.test(blob)) out.cover = "open";
+
+  let section = "ings";
+  let sub = { type: "mix", heading: "", items: [] };
+  const flushSub = () => {
+    const items = joinRecipeLines(sub.items);
+    if (!items && !sub.heading) {
+      sub = { type: "mix", heading: "", items: [] };
+      return;
+    }
+    if (sub.type === "extras" || isExtrasHeading(sub.heading)) {
+      out.extras = [out.extras, items].filter(Boolean).join("\n");
+    } else if (sub.type === "bowl") {
+      const b = isBowlHeading(sub.heading) || { kind: "", label: sub.heading || `קערה ${out.bowls.length + 1}` };
+      out.bowls.push(sanitizeBowl({ label: b.label, kind: b.kind, items }, out.bowls.length + 1));
+    } else if (items) {
+      out.mixGroups.push(
+        sanitizeMixGroup({
+          items,
+          tool: guessMixTool(sub.heading),
+          toolCustom: sub.heading.slice(0, 120),
+        }),
+      );
+    }
+    sub = { type: "mix", heading: "", items: [] };
+  };
+
+  const methodRows = [];
+  const tipRows = [];
+
+  for (; i < rows.length; i += 1) {
+    const row = rows[i];
+    const major = pasteMajorSection(row.text);
+    if (major) {
+      if (section === "ings") flushSub();
+      section = major;
+      continue;
+    }
+    if (section === "tips") {
+      tipRows.push(row.text.replace(/^\s*\d+[\.\)\-:]\s*/, ""));
+      continue;
+    }
+    if (section === "method") {
+      methodRows.push(row);
+      continue;
+    }
+    const looksHead =
+      (!row.bullet && /:$/.test(row.text) && row.text.length < 80) ||
+      /^(ל[א-ת].{0,40}:|רטובים|יבשים|קערה)/.test(row.text);
+    if (looksHead) {
+      flushSub();
+      const heading = row.text.replace(/:$/, "").trim();
+      const bowl = isBowlHeading(heading);
+      sub = {
+        type: isExtrasHeading(heading) ? "extras" : bowl ? "bowl" : "mix",
+        heading,
+        items: [],
+      };
+      continue;
+    }
+    sub.items.push(row.text);
+  }
+  if (section === "ings") flushSub();
+
+  let parent = "";
+  const minIndent = methodRows.reduce((m, r) => Math.min(m, r.indent), methodRows[0]?.indent ?? 0);
+  for (const row of methodRows) {
+    const nested = row.indent > minIndent + 1;
+    const titleOnly = /:$/.test(row.text) && row.text.length < 80;
+    if (!nested && titleOnly) {
+      parent = row.text.replace(/:$/, "").trim();
+      continue;
+    }
+    const body = row.text.replace(/:$/, "").trim();
+    if (nested && parent) out.steps.push(`${parent} — ${body}`);
+    else {
+      parent = "";
+      out.steps.push(body);
+    }
+  }
+
+  out.notes = tipRows.join("\n").trim();
+  if (!out.mixGroups.length && !out.extras && !out.bowls.some((b) => b.items)) {
+    const leftover = rows.slice(out.title ? 1 : 0).filter((r) => !pasteMajorSection(r.text));
+    if (leftover.length) {
+      out.mixGroups = [sanitizeMixGroup({ items: leftover.map((r) => r.text).join("\n") })];
+    }
+  }
+  if (!out.bowls.length) out.bowls = [emptyBowl(1), emptyBowl(2)];
+  if (!out.title) out.title = "מתכון";
+  return out;
 }
 
 export function editorListsFromRecipe(rec) {
